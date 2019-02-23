@@ -21,7 +21,7 @@ type HFSCatalogNodeID = u32;
 //typedef struct HFSPlusExtentDescriptor HFSPlusExtentDescriptor;
 
 #[allow(non_snake_case)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct HFSPlusExtentDescriptor {
     startBlock: u32,
     blockCount: u32,
@@ -39,7 +39,7 @@ struct HFSPlusExtentDescriptor {
 //typedef HFSPlusExtentDescriptor HFSPlusExtentRecord[8];
 
 #[allow(non_snake_case)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct HFSPlusForkData {
     logicalSize: u64,
     clumpSize: u32,
@@ -161,7 +161,7 @@ const HFSP_VERSION: u16 = 4;  // H+ Signature (Big endian)
 const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
 
 #[allow(non_snake_case)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct HFSPlusVolumeHeader {
     signature: u16,
     version: u16,
@@ -366,3 +366,6 @@ fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test;
