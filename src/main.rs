@@ -5,6 +5,9 @@ use std::io::{Read, Seek};
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
 
+#[macro_use]
+extern crate bitflags;
+
 
 //typedef UInt32 HFSCatalogNodeID;
 
@@ -83,6 +86,38 @@ impl HFSPlusExtentDescriptor {
 }
 
 
+//enum {
+//    /* Bits 0-6 are reserved */
+//    kHFSVolumeHardwareLockBit       =  7,
+//    kHFSVolumeUnmountedBit          =  8,
+//    kHFSVolumeSparedBlocksBit       =  9,
+//    kHFSVolumeNoCacheRequiredBit    = 10,
+//    kHFSBootVolumeInconsistentBit   = 11,
+//    kHFSCatalogNodeIDsReusedBit     = 12,
+//    kHFSVolumeJournaledBit          = 13,
+//    /* Bit 14 is reserved */
+//    kHFSVolumeSoftwareLockBit       = 15
+//    /* Bits 16-31 are reserved */
+//};
+
+bitflags! {
+    struct VolumeAttributes: u32 {
+	/* Bits 0-6 are reserved */
+	const kHFSVolumeHardwareLockBit       = 1 <<  7;
+	const kHFSVolumeUnmountedBit          = 1 <<  8;
+	const kHFSVolumeSparedBlocksBit       = 1 <<  9;
+	const kHFSVolumeNoCacheRequiredBit    = 1 << 10;
+	const kHFSBootVolumeInconsistentBit   = 1 << 11;
+	const kHFSCatalogNodeIDsReusedBit     = 1 << 12;
+	const kHFSVolumeJournaledBit          = 1 << 13;
+	/* Bit 14 is reserved */
+	const kHFSVolumeSoftwareLockBit       = 1 << 15;
+	/* Bits 16-30 are reserved */
+	const kHFSVolumeUnusedNodeFixBit      = 1 << 31;
+    }
+}
+
+
 //struct HFSPlusVolumeHeader {
 //    UInt16              signature;
 //    UInt16              version;
@@ -130,7 +165,7 @@ const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
 struct HFSPlusVolumeHeader {
     signature: u16,
     version: u16,
-    attributes: u32,
+    attributes: VolumeAttributes,
     lastMountedVersion: u32,
     journalInfoBlock: u32,
 
@@ -168,7 +203,7 @@ impl HFSPlusVolumeHeader {
         Ok(Self {
             signature: source.read_u16::<BigEndian>()?,
             version: source.read_u16::<BigEndian>()?,
-            attributes: source.read_u32::<BigEndian>()?,
+            attributes: VolumeAttributes::from_bits_truncate(source.read_u32::<BigEndian>()?),
             lastMountedVersion: source.read_u32::<BigEndian>()?,
             journalInfoBlock: source.read_u32::<BigEndian>()?,
 
@@ -187,12 +222,21 @@ impl HFSPlusVolumeHeader {
             nextAllocation: source.read_u32::<BigEndian>()?,
             rsrcClumpSize: source.read_u32::<BigEndian>()?,
             dataClumpSize: source.read_u32::<BigEndian>()?,
-            nextCatalogID: 0,//HFSCatalogNodeID,
+            nextCatalogID: source.read_u32::<BigEndian>()?,  // XXX HFSCatalogNodeID,
 
             writeCount: source.read_u32::<BigEndian>()?,
             encodingsBitmap: source.read_u64::<BigEndian>()?,
 
-            finderInfo: [0; 8],//[u32; 8],
+            finderInfo: [
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+            ],
 
             allocationFile: HFSPlusForkData::import(source)?,
             extentsFile: HFSPlusForkData::import(source)?,
@@ -234,6 +278,17 @@ fn main() -> std::io::Result<()> {
             return Ok(());
         }
     }
+    println!("Start: {}", header.catalogFile.extents[0].startBlock as u64);
+    file.seek(std::io::SeekFrom::Start(header.catalogFile.extents[0].startBlock as u64))?;
+    //let mut header_node = Vec::with_capacity(512);
+    let mut header_node = vec![0; 512];
+    //let mut header_node = [0; 512];
+    println!("{} -> {:?}", header_node.len(), "f");
+    file.read_exact(&mut header_node)?;  // Minimum size for any node, needed to get nodeSize field
+    println!("{} -> {:?}", header_node.len(), header_node);
+    println!("{} -> {:?}", header_node.len(), "f");
+    let node_size = (&header_node[32..34]).read_u16::<BigEndian>()?;
+    println!("{}", node_size);
 
     Ok(())
 }
