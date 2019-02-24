@@ -138,6 +138,7 @@ const kBTHeaderNode   :i8  =  1;
 const kBTMapNode      :i8  =  2;
 
 
+#[allow(non_snake_case)]
 struct BTNodeDescriptor {
     fLink: u32,
     bLink: u32,
@@ -159,6 +160,64 @@ impl BTNodeDescriptor {
         })
     }
 }
+
+
+#[derive(Debug)]
+enum HFSError {
+    IOError,
+}
+
+impl From<HFSError> for Error {
+    fn from(_: HFSError) -> Error {
+        Error::new(ErrorKind::Other, "HFS Error")
+    }
+}
+
+struct Node {
+}
+
+
+struct BTree {
+    fork: Rc<RefCell<Fork>>,
+    node_size: u16,
+}
+
+impl BTree {
+    fn open(fork_rc: ForkRc) -> Result<BTree, HFSError> {
+        let node_size;
+        {
+        let fork = fork_rc.borrow_mut();
+        //let node_size = 0;
+        let mut buffer = vec![0; 512];
+        fork.read(0, &mut buffer).expect("Failed to read from fork");
+        let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
+        //assert_eq!(node.kind, kBTHeaderNode);
+        //assert_eq!(node.bLink, 0);
+        //assert_eq!(node.numRecords, 3);
+        //assert_eq!(node.reserved, 0);
+        node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
+        let remaining = node_size - buffer.len() as u16;
+        for _ in 0..remaining {
+            buffer.push(0);
+        }
+        }
+        // XXX Verify size >= 512
+        //
+        //println!("{}", node_size);
+        //assert_eq!(node_size, 4096);
+        //file.read_exact(&mut header_node)?;  // Minimum size for any node, needed to get nodeSize field
+        //println!("{} -> {:?}", header_node.len(), header_node);
+        //println!("{} -> {:?}", header_node.len(), "f");
+        //let node_size = (&header_node[32..34]).read_u16::<BigEndian>()?;
+        //println!("{}", node_size);
+        Ok(BTree {
+            fork: fork_rc,
+            node_size,
+        })
+    }
+}
+
+type BTreeRc = Rc<RefCell<BTree>>;
 
 
 //enum {
@@ -363,12 +422,16 @@ impl Fork {
     }
 }
 
+type ForkRc = Rc<RefCell<Fork>>;
+
 struct HFSVolume {
     file: Rc<RefCell<File>>,
     header: HFSPlusVolumeHeader,
     catalog_fork: Weak<RefCell<Fork>>,
     extents_fork: Weak<RefCell<Fork>>,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork>>>,
+    catalog_btree: Option<BTreeRc>,
+    extents_btree: Option<BTreeRc>,
 }
 
 impl HFSVolume {
@@ -407,6 +470,8 @@ impl HFSVolume {
             catalog_fork: Weak::new(),
             extents_fork: Weak::new(),
             forks: HashMap::new(),
+            catalog_btree: None,
+            extents_btree: None,
         }));
         let catalog_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile)?));
         let extents_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile)?));
@@ -414,6 +479,8 @@ impl HFSVolume {
         volume.borrow_mut().extents_fork = Rc::downgrade(&extents_fork);
         volume.borrow_mut().forks.insert(kHFSCatalogFileID, Rc::clone(&catalog_fork));
         volume.borrow_mut().forks.insert(kHFSExtentsFileID, Rc::clone(&extents_fork));
+        volume.borrow_mut().catalog_btree = Some(Rc::new(RefCell::new(BTree::open(catalog_fork)?)));
+        volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork)?)));
         Ok(volume)
     }
 

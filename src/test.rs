@@ -162,6 +162,8 @@ fn test_bad_fork_data() {
         catalog_fork: Weak::new(),
         extents_fork: Weak::new(),
         forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
     }));
     let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_err(), "Errors in fork data not detected in check");
@@ -192,6 +194,8 @@ fn test_good_fork_data() {
         catalog_fork: Weak::new(),
         extents_fork: Weak::new(),
         forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
     }));
     let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_ok(), "Errors found in fork data");
@@ -209,7 +213,7 @@ fn load_blank_volume_catalog_fork() {
     assert_eq!(volume.borrow().extents_fork.upgrade().unwrap().borrow().len(), 32768);
     //let mut buffer = vec![0; 512];
     let mut buffer = vec![0; 512];
-    fork.read(0, &mut buffer);
+    fork.read(0, &mut buffer).expect("Failed to read from fork");
     //let node = BTNodeDescriptor::import(&mut Cursor::new(&mut buffer)).unwrap();
     let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
     assert_eq!(node.kind, kBTHeaderNode);
@@ -219,4 +223,36 @@ fn load_blank_volume_catalog_fork() {
     let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
     println!("{}", node_size);
     assert_eq!(node_size, 4096);
+}
+
+#[test]
+fn load_blank_volume_catalog_btree() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    assert!(volume.borrow().catalog_btree.is_some(), "Invalid Catalog B-Tree pointer");
+    assert!(volume.borrow().extents_btree.is_some(), "Invalid Extents B-Tree pointer");
+    let vol2 = volume.borrow();
+    match vol2.catalog_btree {
+        Some(ref b) => { assert_eq!(b.borrow().node_size, 4096); },
+        None => { assert!(false, "Failed to open B-Tree"); },
+    };
+    match vol2.extents_btree {
+        Some(ref b) => { assert_eq!(b.borrow().node_size, 4096); },
+        None => { assert!(false, "Failed to open B-Tree"); },
+    };
+    //let vol3 = &vol2.catalog_btree;
+    //let fork = vol3.unwrap().borrow();
+    //assert_eq!(fork.node_size, 32768);
+    //assert_eq!(volume.borrow().extents_fork.upgrade().unwrap().borrow().len(), 32768);
+    ////let mut buffer = vec![0; 512];
+    //let mut buffer = vec![0; 512];
+    //fork.read(0, &mut buffer);
+    ////let node = BTNodeDescriptor::import(&mut Cursor::new(&mut buffer)).unwrap();
+    //let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
+    //assert_eq!(node.kind, kBTHeaderNode);
+    //assert_eq!(node.bLink, 0);
+    //assert_eq!(node.numRecords, 3);
+    //assert_eq!(node.reserved, 0);
+    //let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
+    //println!("{}", node_size);
+    //assert_eq!(node_size, 4096);
 }
