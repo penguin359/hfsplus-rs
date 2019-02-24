@@ -1,8 +1,10 @@
 //use crate::*;
 use super::*;
 
+use std::io::Error;
+
 #[test]
-fn load_blank_volume() {
+fn load_blank_volume_header() {
     let expected = HFSPlusVolumeHeader {
         signature: HFSP_SIGNATURE,
         version: 4,
@@ -108,4 +110,24 @@ fn load_blank_volume() {
     file.seek(std::io::SeekFrom::Start(1024)).expect("Failed to seek in file");
     let actual = HFSPlusVolumeHeader::import(&mut file).expect("Failed to read Volume Header");
     assert_eq!(expected, actual);
+}
+
+#[test]
+fn load_blank_volume() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    assert_eq!(volume.header.version, 4);
+}
+
+#[test]
+fn load_blank_file() {
+    let volume = HFSVolume::load_file("/dev/zero");
+    assert!(volume.is_err(), "Failed to throw error reading blank volume");
+    //assert_eq!(volume.unwrap_err().to_string(), "");
+}
+
+#[test]
+fn load_bad_version_file() {
+    let volume = HFSVolume::load_file("/dev/zero");
+    assert!(volume.is_err(), "Failed to throw error reading blank volume");
+    //assert_eq!(volume.unwrap_err().to_string(), "");
 }

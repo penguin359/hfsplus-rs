@@ -1,6 +1,8 @@
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::fs::File;
 //use std::io::{Read, Write, Seek};
-use std::io::{Read, Seek};
+use std::io::{Error, ErrorKind, Read, Seek};
 
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -102,18 +104,18 @@ impl HFSPlusExtentDescriptor {
 
 bitflags! {
     struct VolumeAttributes: u32 {
-	/* Bits 0-6 are reserved */
-	const kHFSVolumeHardwareLockBit       = 1 <<  7;
-	const kHFSVolumeUnmountedBit          = 1 <<  8;
-	const kHFSVolumeSparedBlocksBit       = 1 <<  9;
-	const kHFSVolumeNoCacheRequiredBit    = 1 << 10;
-	const kHFSBootVolumeInconsistentBit   = 1 << 11;
-	const kHFSCatalogNodeIDsReusedBit     = 1 << 12;
-	const kHFSVolumeJournaledBit          = 1 << 13;
-	/* Bit 14 is reserved */
-	const kHFSVolumeSoftwareLockBit       = 1 << 15;
-	/* Bits 16-30 are reserved */
-	const kHFSVolumeUnusedNodeFixBit      = 1 << 31;
+        /* Bits 0-6 are reserved */
+        const kHFSVolumeHardwareLockBit       = 1 <<  7;
+        const kHFSVolumeUnmountedBit          = 1 <<  8;
+        const kHFSVolumeSparedBlocksBit       = 1 <<  9;
+        const kHFSVolumeNoCacheRequiredBit    = 1 << 10;
+        const kHFSBootVolumeInconsistentBit   = 1 << 11;
+        const kHFSCatalogNodeIDsReusedBit     = 1 << 12;
+        const kHFSVolumeJournaledBit          = 1 << 13;
+        /* Bit 14 is reserved */
+        const kHFSVolumeSoftwareLockBit       = 1 << 15;
+        /* Bits 16-30 are reserved */
+        const kHFSVolumeUnusedNodeFixBit      = 1 << 31;
     }
 }
 
@@ -248,6 +250,66 @@ impl HFSPlusVolumeHeader {
 }
 
 
+struct Fork {
+    file: Rc<RefCell<File>>,
+    volume: Rc<RefCell<HFSVolume>>,
+    logical_size: u64,
+    extents: Vec<(u32, u32)>,
+}
+
+impl Fork {
+    fn load() -> std::io::Result<Fork> {
+        Err(Error::new(ErrorKind::Other, "f"))
+    }
+}
+
+struct HFSVolume {
+    file: File,
+    header: HFSPlusVolumeHeader,
+}
+
+impl HFSVolume {
+    fn load(mut file: File) -> std::io::Result<HFSVolume> {
+        file.seek(std::io::SeekFrom::Start(1024))?;
+        let header = HFSPlusVolumeHeader::import(&mut file)?;
+        let hfsx_volume = match header.signature {
+            HFSP_SIGNATURE => {
+                println!("HFS+ Volume");
+                false
+            },
+            HFSX_SIGNATURE => {
+                println!("HFSX Volume");
+                true
+            },
+            _ => {
+                println!("Unknown Volume");
+                return Err(Error::new(ErrorKind::InvalidData, "Invalid volume signature"));
+            },
+        };
+        //if !hfsx_volume {
+        //    if header.version != HFSP_VERSION {
+        //        println!("Unsupported version for HFS+ Volume");
+        //        return Ok(());
+        //    }
+        //} else {
+        //    if header.version != HFSX_VERSION {
+        //        println!("Unsupported version for HFSX Volume");
+        //        return Ok(());
+        //    }
+        //}
+        Ok(HFSVolume {
+            file,
+            header,
+        })
+    }
+
+    fn load_file(filename: &str) -> std::io::Result<HFSVolume> {
+        let file = File::open(filename)?;
+        HFSVolume::load(file)
+    }
+}
+
+
 fn _main() -> std::io::Result<()> {
     let mut file = File::open("src/image")?;
     file.seek(std::io::SeekFrom::Start(1024))?;
@@ -366,6 +428,5 @@ fn main() -> std::io::Result<()> {
 
     Ok(())
 }
-
 #[cfg(test)]
 mod test;
