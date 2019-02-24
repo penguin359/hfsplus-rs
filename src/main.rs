@@ -115,6 +115,52 @@ impl HFSPlusExtentDescriptor {
 }
 
 
+//struct BTNodeDescriptor {
+//    UInt32    fLink;
+//    UInt32    bLink;
+//    SInt8     kind;
+//    UInt8     height;
+//    UInt16    numRecords;
+//    UInt16    reserved;
+//};
+//typedef struct BTNodeDescriptor BTNodeDescriptor;
+//
+//enum {
+//    kBTLeafNode       = -1,
+//    kBTIndexNode      =  0,
+//    kBTHeaderNode     =  1,
+//    kBTMapNode        =  2
+//};
+
+const kBTLeafNode     :i8  = -1;
+const kBTIndexNode    :i8  =  0;
+const kBTHeaderNode   :i8  =  1;
+const kBTMapNode      :i8  =  2;
+
+
+struct BTNodeDescriptor {
+    fLink: u32,
+    bLink: u32,
+    kind: i8,
+    height: u8,
+    numRecords: u16,
+    reserved: u16,
+}
+
+impl BTNodeDescriptor {
+    fn import(source: &mut Read) -> std::io::Result<Self> {
+        Ok(Self {
+            fLink: source.read_u32::<BigEndian>()?,
+            bLink: source.read_u32::<BigEndian>()?,
+            kind: source.read_i8()?,
+            height: source.read_u8()?,
+            numRecords: source.read_u16::<BigEndian>()?,
+            reserved: source.read_u16::<BigEndian>()?,
+        })
+    }
+}
+
+
 //enum {
 //    /* Bits 0-6 are reserved */
 //    kHFSVolumeHardwareLockBit       =  7,
@@ -304,16 +350,25 @@ impl Fork {
     }
 
     fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
+        let volume = self.volume.borrow();
+        let mut file = self.file.borrow_mut();
+        println!("Start: {}", self.extents[0].0 as u64);
+        file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64))?;
+        file.read_exact(buffer)?;
         Ok(())
+    }
+
+    fn len(&self) -> u64 {
+        self.logical_size
     }
 }
 
 struct HFSVolume {
     file: Rc<RefCell<File>>,
     header: HFSPlusVolumeHeader,
-    catalog_fork: Weak<Fork>,
-    extents_fork: Weak<Fork>,
-    forks: HashMap<HFSCatalogNodeID, Fork>,
+    catalog_fork: Weak<RefCell<Fork>>,
+    extents_fork: Weak<RefCell<Fork>>,
+    forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork>>>,
 }
 
 impl HFSVolume {
@@ -353,8 +408,12 @@ impl HFSVolume {
             extents_fork: Weak::new(),
             forks: HashMap::new(),
         }));
-        let catalog_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile);
-        let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile);
+        let catalog_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile)?));
+        let extents_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile)?));
+        volume.borrow_mut().catalog_fork = Rc::downgrade(&catalog_fork);
+        volume.borrow_mut().extents_fork = Rc::downgrade(&extents_fork);
+        volume.borrow_mut().forks.insert(kHFSCatalogFileID, Rc::clone(&catalog_fork));
+        volume.borrow_mut().forks.insert(kHFSExtentsFileID, Rc::clone(&extents_fork));
         Ok(volume)
     }
 

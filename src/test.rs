@@ -1,6 +1,7 @@
 //use crate::*;
 use super::*;
 
+use std::io::Cursor;
 use std::io::Error;
 
 fn blank_volume_header() -> HFSPlusVolumeHeader {
@@ -194,4 +195,28 @@ fn test_good_fork_data() {
     }));
     let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_ok(), "Errors found in fork data");
+}
+
+#[test]
+fn load_blank_volume_catalog_fork() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    assert!(volume.borrow().catalog_fork.upgrade().is_some(), "Invalid catalog fork pointer");
+    assert!(volume.borrow().extents_fork.upgrade().is_some(), "Invalid extents fork pointer");
+    let vol = volume.borrow();
+    let vol2 = vol.catalog_fork.upgrade().unwrap();
+    let fork = vol2.borrow();
+    assert_eq!(fork.len(), 32768);
+    assert_eq!(volume.borrow().extents_fork.upgrade().unwrap().borrow().len(), 32768);
+    //let mut buffer = vec![0; 512];
+    let mut buffer = vec![0; 512];
+    fork.read(0, &mut buffer);
+    //let node = BTNodeDescriptor::import(&mut Cursor::new(&mut buffer)).unwrap();
+    let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
+    assert_eq!(node.kind, kBTHeaderNode);
+    assert_eq!(node.bLink, 0);
+    assert_eq!(node.numRecords, 3);
+    assert_eq!(node.reserved, 0);
+    let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
+    println!("{}", node_size);
+    assert_eq!(node_size, 4096);
 }
