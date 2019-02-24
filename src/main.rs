@@ -1,8 +1,9 @@
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::fs::File;
 //use std::io::{Read, Write, Seek};
 use std::io::{Error, ErrorKind, Read, Seek};
+use std::collections::HashMap;
 
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -12,8 +13,34 @@ extern crate bitflags;
 
 
 //typedef UInt32 HFSCatalogNodeID;
+//
+//enum {
+//    kHFSRootParentID            = 1,
+//    kHFSRootFolderID            = 2,
+//    kHFSExtentsFileID           = 3,
+//    kHFSCatalogFileID           = 4,
+//    kHFSBadBlockFileID          = 5,
+//    kHFSAllocationFileID        = 6,
+//    kHFSStartupFileID           = 7,
+//    kHFSAttributesFileID        = 8,
+//    kHFSRepairCatalogFileID     = 14,
+//    kHFSBogusExtentFileID       = 15,
+//    kHFSFirstUserCatalogNodeID  = 16
+//};
 
 type HFSCatalogNodeID = u32;
+
+const kHFSRootParentID           : HFSCatalogNodeID = 1;
+const kHFSRootFolderID           : HFSCatalogNodeID = 2;
+const kHFSExtentsFileID          : HFSCatalogNodeID = 3;
+const kHFSCatalogFileID          : HFSCatalogNodeID = 4;
+const kHFSBadBlockFileID         : HFSCatalogNodeID = 5;
+const kHFSAllocationFileID       : HFSCatalogNodeID = 6;
+const kHFSStartupFileID          : HFSCatalogNodeID = 7;
+const kHFSAttributesFileID       : HFSCatalogNodeID = 8;
+const kHFSRepairCatalogFileID    : HFSCatalogNodeID = 14;
+const kHFSBogusExtentFileID      : HFSCatalogNodeID = 15;
+const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
 
 
 //struct HFSPlusExtentDescriptor {
@@ -258,18 +285,39 @@ struct Fork {
 }
 
 impl Fork {
-    fn load() -> std::io::Result<Fork> {
-        Err(Error::new(ErrorKind::Other, "f"))
+    fn load(file: Rc<RefCell<File>>, volume: Rc<RefCell<HFSVolume>>, data: &HFSPlusForkData) -> std::io::Result<Fork> {
+        //Err(Error::new(ErrorKind::Other, "f"))
+        let mut extents = Vec::with_capacity(8);
+        for extent in &data.extents {
+            extents.push((extent.startBlock, extent.blockCount));
+        }
+        Ok(Fork { file, volume, logical_size: data.logicalSize, extents })
+    }
+
+    fn check(&self) -> std::io::Result<()> {
+        let sum: u32 = self.extents.iter().map(|x| x.1).sum();
+        let actual_size = sum as u64 * self.volume.borrow().header.blockSize as u64;
+        if actual_size != self.logical_size {
+            return Err(Error::new(ErrorKind::Other, "Size does not add up"));
+        }
+        Ok(())
+    }
+
+    fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
 struct HFSVolume {
-    file: File,
+    file: Rc<RefCell<File>>,
     header: HFSPlusVolumeHeader,
+    catalog_fork: Weak<Fork>,
+    extents_fork: Weak<Fork>,
+    forks: HashMap<HFSCatalogNodeID, Fork>,
 }
 
 impl HFSVolume {
-    fn load(mut file: File) -> std::io::Result<HFSVolume> {
+    fn load(mut file: File) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
         file.seek(std::io::SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let hfsx_volume = match header.signature {
@@ -297,13 +345,20 @@ impl HFSVolume {
         //        return Ok(());
         //    }
         //}
-        Ok(HFSVolume {
+        let file = Rc::new(RefCell::new(file));
+        let volume = Rc::new(RefCell::new(HFSVolume {
             file,
             header,
-        })
+            catalog_fork: Weak::new(),
+            extents_fork: Weak::new(),
+            forks: HashMap::new(),
+        }));
+        let catalog_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile);
+        let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile);
+        Ok(volume)
     }
 
-    fn load_file(filename: &str) -> std::io::Result<HFSVolume> {
+    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
     }
