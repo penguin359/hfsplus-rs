@@ -139,6 +139,7 @@ const kBTMapNode      :i8  =  2;
 
 
 #[allow(non_snake_case)]
+#[derive(Debug, PartialEq, Eq)]
 struct BTNodeDescriptor {
     fLink: u32,
     bLink: u32,
@@ -162,29 +163,195 @@ impl BTNodeDescriptor {
 }
 
 
-#[derive(Debug)]
-enum HFSError {
-    IOError,
+//struct BTHeaderRec {
+//    UInt16    treeDepth;
+//    UInt32    rootNode;
+//    UInt32    leafRecords;
+//    UInt32    firstLeafNode;
+//    UInt32    lastLeafNode;
+//    UInt16    nodeSize;
+//    UInt16    maxKeyLength;
+//    UInt32    totalNodes;
+//    UInt32    freeNodes;
+//    UInt16    reserved1;
+//    UInt32    clumpSize;      // misaligned
+//    UInt8     btreeType;
+//    UInt8     keyCompareType;
+//    UInt32    attributes;     // long aligned again
+//    UInt32    reserved3[16];
+//};
+//typedef struct BTHeaderRec BTHeaderRec;
+
+#[allow(non_snake_case)]
+#[derive(Debug, PartialEq, Eq)]
+struct BTHeaderRec {
+    treeDepth: u16,
+    rootNode: u32,
+    leafRecords: u32,
+    firstLeafNode: u32,
+    lastLeafNode: u32,
+    nodeSize: u16,
+    maxKeyLength: u16,
+    totalNodes: u32,
+    freeNodes: u32,
+    reserved1: u16,
+    clumpSize: u32,
+    btreeType: u8,
+    keyCompareType: u8,
+    attributes: u32,
+    reserved3: [u32; 16],
 }
 
-impl From<HFSError> for Error {
-    fn from(_: HFSError) -> Error {
-        Error::new(ErrorKind::Other, "HFS Error")
+impl BTHeaderRec {
+    fn import(source: &mut Read) -> std::io::Result<Self> {
+        Ok(Self {
+            treeDepth: source.read_u16::<BigEndian>()?,
+            rootNode: source.read_u32::<BigEndian>()?,
+            leafRecords: source.read_u32::<BigEndian>()?,
+            firstLeafNode: source.read_u32::<BigEndian>()?,
+            lastLeafNode: source.read_u32::<BigEndian>()?,
+            nodeSize: source.read_u16::<BigEndian>()?,
+            maxKeyLength: source.read_u16::<BigEndian>()?,
+            totalNodes: source.read_u32::<BigEndian>()?,
+            freeNodes: source.read_u32::<BigEndian>()?,
+            reserved1: source.read_u16::<BigEndian>()?,
+            clumpSize: source.read_u32::<BigEndian>()?,
+            btreeType: source.read_u8()?,
+            keyCompareType: source.read_u8()?,
+            attributes: source.read_u32::<BigEndian>()?,
+            reserved3: [
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+            ],
+        })
     }
 }
 
-struct Node {
+
+#[derive(Debug)]
+enum HFSError {
+    IOError(Error),
+    BadNode,
+}
+
+impl From<Error> for HFSError {
+    fn from(x: Error) -> HFSError {
+        HFSError::IOError(x)
+    }
+}
+
+impl From<HFSError> for Error {
+    fn from(x: HFSError) -> Error {
+        match x {
+            HFSError::IOError(y) => y,
+            _ => Error::new(ErrorKind::Other, "HFS Error"),
+        }
+    }
+}
+
+struct HeaderNode {
+    descriptor: BTNodeDescriptor,
+    header: BTHeaderRec,
+    user_data: Vec<u8>,
+    map: Vec<u8>,
+}
+
+struct MapNode {
+    descriptor: BTNodeDescriptor,
+}
+
+struct IndexNode {
+    descriptor: BTNodeDescriptor,
+}
+
+struct LeafNode {
+    descriptor: BTNodeDescriptor,
+}
+
+enum Node {
+    HeaderNode(HeaderNode),
+    MapNode(MapNode),
+    IndexNode(IndexNode),
+    LeafNode(LeafNode),
+}
+
+impl Node {
+    fn load(data: &[u8]) -> Result<Node, Error> {
+        // TODO Check minimum size
+        // TODO Check numRecords within size limits
+        let node = BTNodeDescriptor::import(&mut &data[..])?;
+        println!("Node: {:?}", node);
+        println!("Node len: {}", data.len());
+        let num_offsets = (node.numRecords+1) as usize;
+        let first_offset_pos = data.len() - 2;
+        let mut offsets = Vec::with_capacity(num_offsets);
+        //println!("Bytes: {:?}", data[(data.len()-num_offsets*2)..]);
+        for b in data.iter() {
+            print!("{:02x} ", b);
+        }
+        for idx in 0..num_offsets {
+            let offset_pos = first_offset_pos - 2*idx;
+            let offset = (&data[offset_pos..offset_pos+2]).read_u16::<BigEndian>()? as usize;
+            offsets.push(offset);
+            println!("  Offset: {}", offset);
+        }
+        let mut records = Vec::new();
+        for idx in 0..num_offsets-1 {
+            let first = offsets[idx];
+            let last = offsets[idx+1];
+            records.push(&data[first..last]);
+        }
+        if node.kind == kBTHeaderNode {
+            println!("Header Length: {}", records[0].len());
+            Ok(Node::HeaderNode(HeaderNode {
+                descriptor: node,
+                header: BTHeaderRec::import(&mut records[0])?,
+                user_data: Vec::new(),
+                map: Vec::new(),
+            }))
+        } else if node.kind == kBTMapNode {
+            Ok(Node::MapNode(MapNode {
+                descriptor: node,
+            }))
+        } else if node.kind == kBTIndexNode {
+            Ok(Node::IndexNode(IndexNode {
+                descriptor: node,
+            }))
+        } else if node.kind == kBTLeafNode {
+            Ok(Node::LeafNode(LeafNode {
+                descriptor: node,
+            }))
+        } else {
+            Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
+        }
+    }
 }
 
 
 struct BTree {
     fork: Rc<RefCell<Fork>>,
     node_size: u16,
+    header: HeaderNode,
 }
 
 impl BTree {
     fn open(fork_rc: ForkRc) -> Result<BTree, HFSError> {
         let node_size;
+        let header;
         {
         let fork = fork_rc.borrow_mut();
         //let node_size = 0;
@@ -200,6 +367,17 @@ impl BTree {
         for _ in 0..remaining {
             buffer.push(0);
         }
+        fork.read(512, &mut buffer[512..]).expect("Failed to read from fork");
+        let header_node = Node::load(&buffer)?;
+        header = match header_node {
+            Node::HeaderNode(x) => {
+                println!("{:?}", x.descriptor);
+                x
+            },
+            _ => {
+                return Err(HFSError::BadNode);
+            },
+        };
         }
         // XXX Verify size >= 512
         //
@@ -213,6 +391,7 @@ impl BTree {
         Ok(BTree {
             fork: fork_rc,
             node_size,
+            header,
         })
     }
 }
@@ -412,7 +591,8 @@ impl Fork {
         let volume = self.volume.borrow();
         let mut file = self.file.borrow_mut();
         println!("Start: {}", self.extents[0].0 as u64);
-        file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64))?;
+        file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
+        println!("Fork read: {}", buffer.len());
         file.read_exact(buffer)?;
         Ok(())
     }

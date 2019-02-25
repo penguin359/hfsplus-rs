@@ -232,11 +232,19 @@ fn load_blank_volume_catalog_btree() {
     assert!(volume.borrow().extents_btree.is_some(), "Invalid Extents B-Tree pointer");
     let vol2 = volume.borrow();
     match vol2.catalog_btree {
-        Some(ref b) => { assert_eq!(b.borrow().node_size, 4096); },
+        Some(ref b) => {
+            let btree = b.borrow();
+            assert_eq!(btree.node_size, 4096);
+            assert_eq!(btree.header.header.nodeSize, 4096);
+        },
         None => { assert!(false, "Failed to open B-Tree"); },
     };
     match vol2.extents_btree {
-        Some(ref b) => { assert_eq!(b.borrow().node_size, 4096); },
+        Some(ref b) => {
+            let btree = b.borrow();
+            assert_eq!(btree.node_size, 4096);
+            assert_eq!(btree.header.header.nodeSize, 4096);
+        },
         None => { assert!(false, "Failed to open B-Tree"); },
     };
     //let vol3 = &vol2.catalog_btree;
