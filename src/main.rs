@@ -789,5 +789,8 @@ fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+
+mod hfs_strings;
+
 #[cfg(test)]
 mod test;
