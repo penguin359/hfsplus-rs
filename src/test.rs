@@ -310,3 +310,20 @@ mod hfs_strings {
         assert_eq!(fast_unicode_compare(&str1, &zulu), Less);
     }
 }
+
+#[test]
+fn create_hfs_string() {
+    let str1    = HFSString::from("THisIsTHEsame");
+    let str2    = HFSString::from("thisIStheSAME");
+    let acute_a = HFSString::from("THisIsTHEsáme");
+    let grave_e = HFSString::from("thisIStheSAMÈ");
+    let alpha   = HFSString::from("Alpha");
+    let zulu    = HFSString::from("zulU");
+    assert!(str1 == str1);
+    assert!(str1 == str2);
+    assert!(str1 < acute_a);
+    assert!(str2 < grave_e);
+    assert!(acute_a > grave_e);
+    assert!(str1 > alpha);
+    assert!(str1 < zulu);
+}

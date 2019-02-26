@@ -4,12 +4,63 @@ use std::fs::File;
 //use std::io::{Read, Write, Seek};
 use std::io::{Error, ErrorKind, Read, Seek};
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
 
 #[macro_use]
 extern crate bitflags;
+
+extern crate unicode_normalization;
+use unicode_normalization::UnicodeNormalization;
+use hfs_strings::fast_unicode_compare;
+
+
+struct HFSString(Vec<u16>);
+
+impl From<String> for HFSString {
+    fn from(str: String) -> Self {
+        HFSString(
+            str.nfd().collect::<String>().encode_utf16().collect()
+        )
+    }
+}
+
+impl From<&str> for HFSString {
+    fn from(str: &str) -> Self {
+        HFSString(
+            str.nfd().collect::<String>().encode_utf16().collect()
+        )
+    }
+}
+
+//impl HFSString {
+//    fn new(data: &[u16]) {
+//        HFSString { contents: vec![data] }
+//    }
+//}
+
+impl PartialOrd for HFSString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(fast_unicode_compare(&self.0[..], &other.0[..]))
+    }
+}
+
+impl Ord for HFSString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        fast_unicode_compare(&self.0[..], &other.0[..])
+    }
+}
+
+impl PartialEq for HFSString {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for HFSString {
+}
 
 
 //typedef UInt32 HFSCatalogNodeID;
