@@ -74,7 +74,7 @@ use std::cmp::Ordering::{Less, Equal, Greater};
 //          return 1;
 //
 
-fn fast_unicode_compare(str1: &[u16], str2: &[u16]) -> Ordering {
+pub fn fast_unicode_compare(str1: &[u16], str2: &[u16]) -> Ordering {
     let mut str1_iter = str1.iter();
     let mut str2_iter = str2.iter();
     let mut c1;
@@ -102,6 +102,9 @@ fn fast_unicode_compare(str1: &[u16], str2: &[u16]) -> Ordering {
             if temp != 0 {                                   //  is there a subtable
                                                              //  for this upper byte?
                 c2 = LOWER_CASE_TABLE[(temp + (c2 & 0x00FF)) as usize];  //  yes, so fold the char
+            }
+            if c2 != 0 {
+                break;
             }
         }
         if c1 != c2 {       //  found a difference, so stop looping

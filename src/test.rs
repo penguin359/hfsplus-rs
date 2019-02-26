@@ -1,3 +1,5 @@
+extern crate unicode_normalization;
+
 //use crate::*;
 use super::*;
 
@@ -280,4 +282,31 @@ fn load_blank_btree_node() {
     let node = Node::load(&node_data);
     assert!(node.is_err(), "zero pointers will have bad offsets");
     //(&mut node_data[510..512]).write_u16::<BigEndian>(14);
+}
+
+use super::hfs_strings::fast_unicode_compare;
+mod hfs_strings {
+    use std::cmp::Ordering::{Less, Equal, Greater};
+
+    use unicode_normalization::UnicodeNormalization;
+
+    use super::fast_unicode_compare;
+
+
+    #[test]
+    fn compare_hfsp_strings() {
+        let str1 = "THisIsTHEsame".nfd().collect::<String>().encode_utf16().collect::<Vec<u16>>();
+        let str2 = "thisIStheSAME".nfd().collect::<String>().encode_utf16().collect::<Vec<u16>>();
+        let acute_a = "THisIsTHEsáme".nfd().collect::<String>().encode_utf16().collect::<Vec<u16>>();
+        let grave_e = "thisIStheSAMÈ".nfd().collect::<String>().encode_utf16().collect::<Vec<u16>>();
+        let alpha = "Alpha".encode_utf16().collect::<Vec<u16>>();
+        let zulu = "zulU".encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(fast_unicode_compare(&str1, &str1), Equal);
+        assert_eq!(fast_unicode_compare(&str1, &str2), Equal);
+        assert_eq!(fast_unicode_compare(&str1, &acute_a), Less);
+        assert_eq!(fast_unicode_compare(&str2, &grave_e), Less);
+        assert_eq!(fast_unicode_compare(&acute_a, &grave_e), Greater);
+        assert_eq!(fast_unicode_compare(&str1, &alpha), Greater);
+        assert_eq!(fast_unicode_compare(&str1, &zulu), Less);
+    }
 }
