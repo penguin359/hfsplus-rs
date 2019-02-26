@@ -244,6 +244,7 @@ impl BTHeaderRec {
 
 #[derive(Debug)]
 enum HFSError {
+    InvalidData(String),
     IOError(Error),
     BadNode,
 }
@@ -261,6 +262,10 @@ impl From<HFSError> for Error {
             _ => Error::new(ErrorKind::Other, "HFS Error"),
         }
     }
+}
+
+
+trait Key : Eq + PartialEq {
 }
 
 struct HeaderNode {
@@ -290,24 +295,31 @@ enum Node {
 }
 
 impl Node {
-    fn load(data: &[u8]) -> Result<Node, Error> {
+    fn load(data: &[u8]) -> Result<Node, HFSError> {
         // TODO Check minimum size
         // TODO Check numRecords within size limits
         let node = BTNodeDescriptor::import(&mut &data[..])?;
-        println!("Node: {:?}", node);
-        println!("Node len: {}", data.len());
+        //println!("Node: {:?}", node);
+        //println!("Node len: {}", data.len());
         let num_offsets = (node.numRecords+1) as usize;
         let first_offset_pos = data.len() - 2;
+        let last_offset_pos = data.len() - num_offsets*2;
         let mut offsets = Vec::with_capacity(num_offsets);
         //println!("Bytes: {:?}", data[(data.len()-num_offsets*2)..]);
-        for b in data.iter() {
-            print!("{:02x} ", b);
-        }
+        //for b in data.iter() {
+        //    print!("{:02x} ", b);
+        //}
         for idx in 0..num_offsets {
             let offset_pos = first_offset_pos - 2*idx;
             let offset = (&data[offset_pos..offset_pos+2]).read_u16::<BigEndian>()? as usize;
+            // BTNodeDescriptor is 14 bytes long
+            // All offsets must be between Descriptor and
+            // beginning of offset table
+            if offset < 14 || offset > last_offset_pos {
+                return Err(HFSError::InvalidData("Invalid record offset value".to_string()));
+            }
             offsets.push(offset);
-            println!("  Offset: {}", offset);
+            //println!("  Offset: {}", offset);
         }
         let mut records = Vec::new();
         for idx in 0..num_offsets-1 {
@@ -336,7 +348,8 @@ impl Node {
                 descriptor: node,
             }))
         } else {
-            Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
+            //Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
+            Err(HFSError::InvalidData("Invalid Node Type".to_string()))
         }
     }
 }

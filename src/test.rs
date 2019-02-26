@@ -4,6 +4,8 @@ use super::*;
 use std::io::Cursor;
 use std::io::Error;
 
+use byteorder::WriteBytesExt;
+
 fn blank_volume_header() -> HFSPlusVolumeHeader {
     HFSPlusVolumeHeader {
         signature: HFSP_SIGNATURE,
@@ -263,4 +265,19 @@ fn load_blank_volume_catalog_btree() {
     //let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
     //println!("{}", node_size);
     //assert_eq!(node_size, 4096);
+}
+
+// TODO Test completely full offset table
+#[test]
+fn load_blank_btree_node() {
+    let mut node_data = vec![0; 512];
+    let node = Node::load(&node_data);
+    assert!(node.is_err(), "All-zero node will have bad offsets");
+    (&mut node_data[510..512]).write_u16::<BigEndian>(14).unwrap();
+    let node = Node::load(&node_data);
+    assert!(node.is_ok(), "Empty node with valid pointers not OK");
+    (&mut node_data[10..12]).write_u16::<BigEndian>(3).unwrap();  // 3 Records
+    let node = Node::load(&node_data);
+    assert!(node.is_err(), "zero pointers will have bad offsets");
+    //(&mut node_data[510..512]).write_u16::<BigEndian>(14);
 }
