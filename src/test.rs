@@ -3,8 +3,8 @@ extern crate unicode_normalization;
 //use crate::*;
 use super::*;
 
-use std::io::Cursor;
-use std::io::Error;
+//use std::io::Cursor;
+//use std::io::Error;
 
 use byteorder::WriteBytesExt;
 
@@ -326,4 +326,44 @@ fn create_hfs_string() {
     assert!(acute_a > grave_e);
     assert!(str1 > alpha);
     assert!(str1 < zulu);
+}
+
+use std::cmp::Ordering::{Less, Equal, Greater};
+
+#[test]
+fn compare_catalog_keys() {
+    let str1    = HFSString::from("THisIsTHEsame");
+    let str2    = HFSString::from("thisIStheSAME");
+    let acute_a = HFSString::from("THisIsTHEsáme");
+    let grave_e = HFSString::from("thisIStheSAMÈ");
+    let alpha   = HFSString::from("Alpha");
+    let zulu    = HFSString::from("zulU");
+    let str1_key = CatalogKey { _case_match: false, parent_id: 8, node_name: str1 };
+    let str2_key = CatalogKey { _case_match: false, parent_id: 8, node_name: str2 };
+    let acute_a_key = CatalogKey { _case_match: false, parent_id: 8, node_name: acute_a };
+    let grave_e_key = CatalogKey { _case_match: false, parent_id: 8, node_name: grave_e };
+    let alpha_key = CatalogKey { _case_match: false, parent_id: 10, node_name: alpha };
+    let zulu_key = CatalogKey { _case_match: false, parent_id: 9, node_name: zulu };
+
+    assert_eq!(str1_key.cmp(&str1_key), Equal);
+    assert_eq!(str1_key.cmp(&str2_key), Equal);
+    assert_eq!(str1_key.cmp(&acute_a_key), Less);
+    assert_eq!(str2_key.cmp(&grave_e_key), Less);
+    assert_eq!(acute_a_key.cmp(&grave_e_key), Greater);
+    assert_eq!(str1_key.cmp(&alpha_key), Less);
+    assert_eq!(str1_key.cmp(&zulu_key), Less);
+    assert_eq!(alpha_key.cmp(&zulu_key), Greater);
+    assert_eq!(alpha_key.cmp(&grave_e_key), Greater);
+    assert_eq!(zulu_key.cmp(&grave_e_key), Greater);
+
+    assert!(str1_key == str1_key);
+    assert!(str1_key == str2_key);
+    assert!(str1_key < acute_a_key);
+    assert!(str2_key < grave_e_key);
+    assert!(acute_a_key > grave_e_key);
+    assert!(str1_key < alpha_key);
+    assert!(str1_key < zulu_key);
+    assert!(alpha_key > zulu_key);
+    assert!(alpha_key > grave_e_key);
+    assert!(zulu_key > grave_e_key);
 }

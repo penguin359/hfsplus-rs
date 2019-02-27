@@ -63,6 +63,94 @@ impl Eq for HFSString {
 }
 
 
+//struct HFSUniStr255 {
+//    UInt16  length;
+//    UniChar unicode[255];
+//};
+//typedef struct HFSUniStr255 HFSUniStr255;
+//typedef const  HFSUniStr255 *ConstHFSUniStr255Param;
+//
+//struct HFSPlusCatalogKey {
+//    UInt16              keyLength;
+//    HFSCatalogNodeID    parentID;
+//    HFSUniStr255        nodeName;
+//};
+//typedef struct HFSPlusCatalogKey HFSPlusCatalogKey;
+
+//type UniChar = u16;
+//
+//struct HFSUniStr255 {
+//    length: u16,
+//    //unicode: [UniChar; 255],
+//    unicode: Vec<u16>,
+//}
+//
+//impl HFSUniStr255 {
+//    fn import(source: &mut Read) -> std::io::Result<Self> {
+//        let length = source.read_u16::<BigEndian>()?;
+//        let mut unicode = Vec::with_capacity(length as usize);
+//        for _ in 0..length {
+//            unicode.push(source.read_u16::<BigEndian>()?);
+//        }
+//        Ok(Self {
+//            length,
+//            unicode,
+//        })
+//    }
+//}
+//
+//impl HFSPlusCatalogKey {
+//    fn import(source: &mut Read) -> std::io::Result<Self> {
+//        Ok(Self {
+//            keyLength: source.read_u16::<BigEndian>()?,
+//            parentID: source.read_u32::<BigEndian>()?,
+//            nodeName: HFSUniStr255::import(source)?,
+//        })
+//    }
+//}
+//
+//struct HFSPlusCatalogKey {
+//    keyLength: u16,
+//    parentID: HFSCatalogNodeID,
+//    nodeName: HFSUniStr255,
+//}
+
+
+struct CatalogKey {
+    _case_match: bool,
+    parent_id: HFSCatalogNodeID,
+    node_name: HFSString,
+}
+
+impl PartialOrd for CatalogKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CatalogKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.parent_id.cmp(&other.parent_id) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Equal => self.node_name.cmp(&other.node_name),
+        }
+    }
+}
+
+impl PartialEq for CatalogKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for CatalogKey {
+}
+
+impl Key for CatalogKey {
+}
+
+
 //typedef UInt32 HFSCatalogNodeID;
 //
 //enum {
@@ -81,17 +169,27 @@ impl Eq for HFSString {
 
 type HFSCatalogNodeID = u32;
 
-const kHFSRootParentID           : HFSCatalogNodeID = 1;
-const kHFSRootFolderID           : HFSCatalogNodeID = 2;
-const kHFSExtentsFileID          : HFSCatalogNodeID = 3;
-const kHFSCatalogFileID          : HFSCatalogNodeID = 4;
-const kHFSBadBlockFileID         : HFSCatalogNodeID = 5;
-const kHFSAllocationFileID       : HFSCatalogNodeID = 6;
-const kHFSStartupFileID          : HFSCatalogNodeID = 7;
-const kHFSAttributesFileID       : HFSCatalogNodeID = 8;
-const kHFSRepairCatalogFileID    : HFSCatalogNodeID = 14;
-const kHFSBogusExtentFileID      : HFSCatalogNodeID = 15;
-const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
+#[allow(non_upper_case_globals, unused_variables)]
+mod hfs {
+use super::HFSCatalogNodeID;
+pub const kHFSRootParentID           : HFSCatalogNodeID = 1;
+pub const kHFSRootFolderID           : HFSCatalogNodeID = 2;
+pub const kHFSExtentsFileID          : HFSCatalogNodeID = 3;
+pub const kHFSCatalogFileID          : HFSCatalogNodeID = 4;
+pub const kHFSBadBlockFileID         : HFSCatalogNodeID = 5;
+pub const kHFSAllocationFileID       : HFSCatalogNodeID = 6;
+pub const kHFSStartupFileID          : HFSCatalogNodeID = 7;
+pub const kHFSAttributesFileID       : HFSCatalogNodeID = 8;
+pub const kHFSRepairCatalogFileID    : HFSCatalogNodeID = 14;
+pub const kHFSBogusExtentFileID      : HFSCatalogNodeID = 15;
+pub const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
+
+pub const kBTLeafNode     :i8  = -1;
+pub const kBTIndexNode    :i8  =  0;
+pub const kBTHeaderNode   :i8  =  1;
+pub const kBTMapNode      :i8  =  2;
+}
+use self::hfs::*;
 
 
 //struct HFSPlusExtentDescriptor {
@@ -183,10 +281,13 @@ impl HFSPlusExtentDescriptor {
 //    kBTMapNode        =  2
 //};
 
-const kBTLeafNode     :i8  = -1;
-const kBTIndexNode    :i8  =  0;
-const kBTHeaderNode   :i8  =  1;
-const kBTMapNode      :i8  =  2;
+//#[allow(non_upper_case_globals)]
+//mod hfs {
+//const kBTLeafNode     :i8  = -1;
+//const kBTIndexNode    :i8  =  0;
+//const kBTHeaderNode   :i8  =  1;
+//const kBTMapNode      :i8  =  2;
+//}
 
 
 #[allow(non_snake_case)]
@@ -316,7 +417,7 @@ impl From<HFSError> for Error {
 }
 
 
-trait Key : Eq + PartialEq {
+trait Key : Ord + PartialOrd + Eq + PartialEq {
 }
 
 struct HeaderNode {
@@ -421,7 +522,7 @@ impl BTree {
         //let node_size = 0;
         let mut buffer = vec![0; 512];
         fork.read(0, &mut buffer).expect("Failed to read from fork");
-        let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
+        //let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
         //assert_eq!(node.kind, kBTHeaderNode);
         //assert_eq!(node.bLink, 0);
         //assert_eq!(node.numRecords, 3);
@@ -682,7 +783,7 @@ impl HFSVolume {
     fn load(mut file: File) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
         file.seek(std::io::SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
-        let hfsx_volume = match header.signature {
+        let _hfsx_volume = match header.signature {
             HFSP_SIGNATURE => {
                 println!("HFS+ Volume");
                 false
@@ -793,7 +894,8 @@ use libc::{ENOENT, ENOSYS};
 use time::Timespec;
 use std::env;
 use std::path::Path;
-use fuse::{FileAttr, FileType, Filesystem, Request, ReplyAttr, ReplyData, ReplyEntry, ReplyDirectory};
+//use fuse::{FileAttr, FileType, Filesystem, Request, ReplyAttr, ReplyData, ReplyEntry, ReplyDirectory};
+use fuse::{FileAttr, FileType, Filesystem, Request, ReplyAttr, ReplyDirectory};
 
 struct JsonFilesystem;
 
