@@ -17,7 +17,15 @@ use unicode_normalization::UnicodeNormalization;
 use hfs_strings::fast_unicode_compare;
 
 
+use std::fmt;
+
 struct HFSString(Vec<u16>);
+
+impl fmt::Debug for HFSString {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", String::from_utf16(self.0.as_slice()).unwrap())
+    }
+}
 
 impl From<String> for HFSString {
     fn from(str: String) -> Self {
@@ -116,10 +124,34 @@ impl Eq for HFSString {
 //}
 
 
+#[derive(Debug)]
 struct CatalogKey {
     _case_match: bool,
     parent_id: HFSCatalogNodeID,
     node_name: HFSString,
+}
+
+impl CatalogKey {
+    fn import(source: &mut Read) -> HFSResult<Self> {
+        let key_length = source.read_u16::<BigEndian>()?;
+        if key_length < 6 {
+            return Err(HFSError::InvalidRecordKey);
+        }
+        let parent_id = source.read_u32::<BigEndian>()?;
+        let count = source.read_u16::<BigEndian>()?;
+        if key_length != count*2 + 6 {
+            return Err(HFSError::InvalidRecordKey);
+        }
+        let mut node_name = Vec::with_capacity(count as usize);
+        for _ in 0..count as usize {
+            node_name.push(source.read_u16::<BigEndian>()?);
+        }
+        Ok(Self {
+            _case_match: false,
+            parent_id,
+            node_name: HFSString(node_name),
+        })
+    }
 }
 
 impl PartialOrd for CatalogKey {
@@ -399,6 +431,7 @@ enum HFSError {
     InvalidData(String),
     IOError(Error),
     BadNode,
+    InvalidRecordKey,
 }
 
 impl From<Error> for HFSError {
@@ -415,6 +448,8 @@ impl From<HFSError> for Error {
         }
     }
 }
+
+type HFSResult<T> = Result<T, HFSError>;
 
 
 trait Key : Ord + PartialOrd + Eq + PartialEq {
@@ -496,6 +531,9 @@ impl Node {
                 descriptor: node,
             }))
         } else if node.kind == kBTLeafNode {
+            for record in &records {
+                println!("File: {:?}", CatalogKey::import(&mut &record[..]));
+            }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
             }))
@@ -558,6 +596,25 @@ impl BTree {
             node_size,
             header,
         })
+    }
+
+    fn get_node(&self, node_num: usize) -> HFSResult<Node> {
+        {
+        let fork = self.fork.borrow_mut();
+        let mut buffer = vec![0; self.node_size as usize];
+        fork.read((node_num*self.node_size as usize) as u64, &mut buffer).expect("Failed to read from fork");
+        let node = Node::load(&buffer)?;
+        //header = match header_node {
+        //    Node::HeaderNode(x) => {
+        //        println!("{:?}", x.descriptor);
+        //        x
+        //    },
+        //    _ => {
+        //        return Err(HFSError::BadNode);
+        //    },
+        //};
+        Ok(node)
+        }
     }
 }
 
@@ -877,6 +934,26 @@ fn _main() -> std::io::Result<()> {
     println!("{} -> {:?}", header_node.len(), "f");
     let node_size = (&header_node[32..34]).read_u16::<BigEndian>()?;
     println!("{}", node_size);
+    let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let vol3 = vol2.catalog_btree.as_ref();
+    //let vol2 = volume.borrow().catalog_btree.as_ref();
+    let vol4 = vol3.unwrap();
+    let btree = vol4.borrow_mut();
+    println!("{} -> {}", btree.header.header.firstLeafNode, btree.header.header.lastLeafNode);
+    let mut node_num = btree.header.header.firstLeafNode;
+    while node_num != 0 {
+        println!("Dump node {}:", node_num);
+        let node = btree.get_node(node_num as usize)?;
+        match node {
+            Node::LeafNode(LeafNode { descriptor: d }) => {
+                println!("Next: {}", d.fLink);
+                node_num = d.fLink;
+            },
+            _ => {
+            },
+        }
+    }
 
     Ok(())
 }
