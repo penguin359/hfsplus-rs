@@ -182,6 +182,10 @@ impl Eq for CatalogKey {
 impl Key for CatalogKey {
 }
 
+struct CatalogRecord {
+    key: CatalogKey,
+}
+
 
 //typedef UInt32 HFSCatalogNodeID;
 //
@@ -470,19 +474,20 @@ struct IndexNode {
     descriptor: BTNodeDescriptor,
 }
 
-struct LeafNode {
+struct LeafNode<R> {
     descriptor: BTNodeDescriptor,
+    records: Vec<R>,
 }
 
-enum Node {
+enum Node<R> {
     HeaderNode(HeaderNode),
     MapNode(MapNode),
     IndexNode(IndexNode),
-    LeafNode(LeafNode),
+    LeafNode(LeafNode<R>),
 }
 
-impl Node {
-    fn load(data: &[u8]) -> Result<Node, HFSError> {
+impl<R> Node<R> {
+    fn load(data: &[u8]) -> Result<Node<R>, HFSError> {
         // TODO Check minimum size
         // TODO Check numRecords within size limits
         let node = BTNodeDescriptor::import(&mut &data[..])?;
@@ -536,6 +541,7 @@ impl Node {
             }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
+                records: Vec::new(),
             }))
         } else {
             //Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
@@ -545,14 +551,15 @@ impl Node {
 }
 
 
-struct BTree {
+struct BTree<R> {
     fork: Rc<RefCell<Fork>>,
     node_size: u16,
     header: HeaderNode,
+    top_node: Option<R>,
 }
 
-impl BTree {
-    fn open(fork_rc: ForkRc) -> Result<BTree, HFSError> {
+impl<R> BTree<R> {
+    fn open(fork_rc: ForkRc) -> Result<BTree<R>, HFSError> {
         let node_size;
         let header;
         {
@@ -571,7 +578,7 @@ impl BTree {
             buffer.push(0);
         }
         fork.read(512, &mut buffer[512..]).expect("Failed to read from fork");
-        let header_node = Node::load(&buffer)?;
+        let header_node = Node::<CatalogRecord>::load(&buffer)?;
         header = match header_node {
             Node::HeaderNode(x) => {
                 println!("{:?}", x.descriptor);
@@ -595,15 +602,16 @@ impl BTree {
             fork: fork_rc,
             node_size,
             header,
+            top_node: None,
         })
     }
 
-    fn get_node(&self, node_num: usize) -> HFSResult<Node> {
+    fn get_node(&self, node_num: usize) -> HFSResult<Node<R>> {
         {
         let fork = self.fork.borrow_mut();
         let mut buffer = vec![0; self.node_size as usize];
         fork.read((node_num*self.node_size as usize) as u64, &mut buffer).expect("Failed to read from fork");
-        let node = Node::load(&buffer)?;
+        let node = Node::<R>::load(&buffer)?;
         //header = match header_node {
         //    Node::HeaderNode(x) => {
         //        println!("{:?}", x.descriptor);
@@ -618,7 +626,7 @@ impl BTree {
     }
 }
 
-type BTreeRc = Rc<RefCell<BTree>>;
+type BTreeRc<R> = Rc<RefCell<BTree<R>>>;
 
 
 //enum {
@@ -832,8 +840,8 @@ struct HFSVolume {
     catalog_fork: Weak<RefCell<Fork>>,
     extents_fork: Weak<RefCell<Fork>>,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork>>>,
-    catalog_btree: Option<BTreeRc>,
-    extents_btree: Option<BTreeRc>,
+    catalog_btree: Option<BTreeRc<CatalogRecord>>,
+    extents_btree: Option<BTreeRc<CatalogRecord>>,
 }
 
 impl HFSVolume {
@@ -936,17 +944,14 @@ fn _main() -> std::io::Result<()> {
     println!("{}", node_size);
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let vol3 = vol2.catalog_btree.as_ref();
-    //let vol2 = volume.borrow().catalog_btree.as_ref();
-    let vol4 = vol3.unwrap();
-    let btree = vol4.borrow_mut();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     println!("{} -> {}", btree.header.header.firstLeafNode, btree.header.header.lastLeafNode);
     let mut node_num = btree.header.header.firstLeafNode;
     while node_num != 0 {
         println!("Dump node {}:", node_num);
         let node = btree.get_node(node_num as usize)?;
         match node {
-            Node::LeafNode(LeafNode { descriptor: d }) => {
+            Node::LeafNode(LeafNode { descriptor: d, .. }) => {
                 println!("Next: {}", d.fLink);
                 node_num = d.fLink;
             },

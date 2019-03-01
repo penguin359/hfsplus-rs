@@ -273,13 +273,13 @@ fn load_blank_volume_catalog_btree() {
 #[test]
 fn load_blank_btree_node() {
     let mut node_data = vec![0; 512];
-    let node = Node::load(&node_data);
+    let node = Node::<CatalogKey>::load(&node_data);
     assert!(node.is_err(), "All-zero node will have bad offsets");
     (&mut node_data[510..512]).write_u16::<BigEndian>(14).unwrap();
-    let node = Node::load(&node_data);
+    let node = Node::<CatalogKey>::load(&node_data);
     assert!(node.is_ok(), "Empty node with valid pointers not OK");
     (&mut node_data[10..12]).write_u16::<BigEndian>(3).unwrap();  // 3 Records
-    let node = Node::load(&node_data);
+    let node = Node::<CatalogKey>::load(&node_data);
     assert!(node.is_err(), "zero pointers will have bad offsets");
     //(&mut node_data[510..512]).write_u16::<BigEndian>(14);
 }
@@ -366,4 +366,37 @@ fn compare_catalog_keys() {
     assert!(alpha_key > zulu_key);
     assert!(alpha_key > grave_e_key);
     assert!(zulu_key > grave_e_key);
+}
+
+#[test]
+fn check_blank_hfs_btree() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let tree_header = &btree.header.header;
+    assert_eq!(tree_header.rootNode, 1);
+    assert_eq!(tree_header.firstLeafNode, 1);
+    assert_eq!(tree_header.lastLeafNode, 1);
+    let node = btree.get_node(tree_header.rootNode as usize);
+    assert!(node.is_ok());
+    let node = node.unwrap();
+    match node {
+        Node::LeafNode(x) => {
+            assert_eq!(x.descriptor.numRecords, 2);
+            assert_eq!(x.descriptor.numRecords as usize, x.records.len());
+            assert_eq!(x.records[0].key.parent_id, 1);
+            assert_eq!(x.records[1].key.parent_id, 2);
+        },
+        _ => {
+            assert!(false, "Wrong root node type");
+        }
+    };
+}
+
+#[test]
+fn check_small_hfs_btree() {
+    let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let mut node_num = btree.header.header.firstLeafNode;
 }
