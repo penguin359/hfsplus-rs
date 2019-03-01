@@ -182,8 +182,18 @@ impl Eq for CatalogKey {
 impl Key for CatalogKey {
 }
 
+trait Record {
+    fn new(key: CatalogKey) -> Self;
+}
+
 struct CatalogRecord {
     key: CatalogKey,
+}
+
+impl Record for CatalogRecord {
+    fn new(key: CatalogKey) -> CatalogRecord {
+        CatalogRecord { key }
+    }
 }
 
 
@@ -474,19 +484,19 @@ struct IndexNode {
     descriptor: BTNodeDescriptor,
 }
 
-struct LeafNode<R> {
+struct LeafNode<R: Record> {
     descriptor: BTNodeDescriptor,
     records: Vec<R>,
 }
 
-enum Node<R> {
+enum Node<R: Record> {
     HeaderNode(HeaderNode),
     MapNode(MapNode),
     IndexNode(IndexNode),
     LeafNode(LeafNode<R>),
 }
 
-impl<R> Node<R> {
+impl<R: Record> Node<R> {
     fn load(data: &[u8]) -> Result<Node<R>, HFSError> {
         // TODO Check minimum size
         // TODO Check numRecords within size limits
@@ -536,12 +546,15 @@ impl<R> Node<R> {
                 descriptor: node,
             }))
         } else if node.kind == kBTLeafNode {
+            let mut r = Vec::<R>::new();
             for record in &records {
-                println!("File: {:?}", CatalogKey::import(&mut &record[..]));
+                let r2 = CatalogKey::import(&mut &record[..])?;
+                println!("File: {:?}", r2);
+                r.push(R::new(r2));
             }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
-                records: Vec::new(),
+                records: r,
             }))
         } else {
             //Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
@@ -558,7 +571,7 @@ struct BTree<R> {
     top_node: Option<R>,
 }
 
-impl<R> BTree<R> {
+impl<R: Record> BTree<R> {
     fn open(fork_rc: ForkRc) -> Result<BTree<R>, HFSError> {
         let node_size;
         let header;
