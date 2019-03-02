@@ -1,10 +1,6 @@
 extern crate unicode_normalization;
 
-//use crate::*;
 use super::*;
-
-//use std::io::Cursor;
-//use std::io::Error;
 
 use byteorder::WriteBytesExt;
 
@@ -397,8 +393,8 @@ fn check_blank_hfs_btree() {
 fn check_small_hfs_btree() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
-    let mut node_num = btree.header.header.firstLeafNode;
+    //let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    //let mut node_num = btree.header.header.firstLeafNode;
 }
 
 #[test]
@@ -409,15 +405,17 @@ fn load_root_thread_record() {
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(root_thread_key);
     assert!(thread_record_res.is_ok(), "Failed to find root thread record");
-    //let thread = match thread_record_res.unwrap().body {
-    //    CatalogBody::FolderThread(x) => {
-    //        x
-    //    },
-    //    _ => {
-    //        assert!(false, "Not a folder thread record");
-    //    },
-    //};
-    //let root_key = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("BLANK") };
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_key = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("BLANK") };
+    assert_eq!(*thread, root_key);
     //assert_eq!(thread.parent_id, 1);
     //assert_eq!(thread.node_name, root_key.node_name);
     //assert_eq!(tree_header.lastLeafNode, 1);

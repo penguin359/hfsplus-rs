@@ -202,8 +202,8 @@ trait Record {
 enum CatalogBody {
     Folder,
     File,
-    FolderThread(HFSCatalogNodeID),
-    FileThread(HFSCatalogNodeID),
+    FolderThread(CatalogKey),
+    FileThread(CatalogKey),
 }
 
 struct CatalogRecord {
@@ -213,8 +213,24 @@ struct CatalogRecord {
 
 impl Record for CatalogRecord {
     fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
-        let record_type = source.read_u16::<BigEndian>()?;
-        Ok(CatalogRecord { key, body: CatalogBody::Folder })
+        let record_type = source.read_i16::<BigEndian>()?;
+        let body = match record_type {
+            kHFSPlusFolderThreadRecord => {
+                let _reserved = source.read_i16::<BigEndian>()?;
+                let parent_id = source.read_u32::<BigEndian>()?;
+                let count = source.read_u16::<BigEndian>()?;
+                //if key_length != count*2 + 6 {
+                //    return Err(HFSError::InvalidRecordKey);
+                //}
+                let mut node_name = Vec::with_capacity(count as usize);
+                for _ in 0..count as usize {
+                    node_name.push(source.read_u16::<BigEndian>()?);
+                }
+                let to_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString(node_name) };
+                CatalogBody::FolderThread(to_key)
+            }
+        };
+        Ok(CatalogRecord { key, body })
     }
 
     fn get_key(&self) -> &CatalogKey {
@@ -402,16 +418,16 @@ trait Key : Ord + PartialOrd + Eq + PartialEq {
 struct HeaderNode {
     descriptor: BTNodeDescriptor,
     header: BTHeaderRec,
-    user_data: Vec<u8>,
-    map: Vec<u8>,
+    _user_data: Vec<u8>,
+    _map: Vec<u8>,
 }
 
 struct MapNode {
-    descriptor: BTNodeDescriptor,
+    _descriptor: BTNodeDescriptor,
 }
 
 struct IndexNode {
-    descriptor: BTNodeDescriptor,
+    _descriptor: BTNodeDescriptor,
 }
 
 struct LeafNode<R: Record> {
@@ -464,16 +480,16 @@ impl<R: Record> Node<R> {
             Ok(Node::HeaderNode(HeaderNode {
                 descriptor: node,
                 header: BTHeaderRec::import(&mut records[0])?,
-                user_data: Vec::new(),
-                map: Vec::new(),
+                _user_data: Vec::new(),
+                _map: Vec::new(),
             }))
         } else if node.kind == kBTMapNode {
             Ok(Node::MapNode(MapNode {
-                descriptor: node,
+                _descriptor: node,
             }))
         } else if node.kind == kBTIndexNode {
             Ok(Node::IndexNode(IndexNode {
-                descriptor: node,
+                _descriptor: node,
             }))
         } else if node.kind == kBTLeafNode {
             let mut r = Vec::<Rc<R>>::new();
@@ -499,7 +515,7 @@ struct BTree<R> {
     fork: Rc<RefCell<Fork>>,
     node_size: u16,
     header: HeaderNode,
-    top_node: Option<R>,
+    _top_node: Option<R>,
 }
 
 impl<R: Record> BTree<R> {
@@ -546,7 +562,7 @@ impl<R: Record> BTree<R> {
             fork: fork_rc,
             node_size,
             header,
-            top_node: None,
+            _top_node: None,
         })
     }
 
