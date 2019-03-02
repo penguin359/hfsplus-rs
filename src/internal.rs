@@ -1,4 +1,14 @@
-/// Core Concepts
+#![allow(non_snake_case, unused)]
+#![allow(non_upper_case_globals, unused_variables)]
+
+//use std::io::{Cursor, Error, ErrorKind, Read, Seek};
+use std::io::{self, Read};
+
+use byteorder::{BigEndian, ReadBytesExt};
+
+
+
+//- Core Concepts
 
 // HFS Plus Names
 //struct HFSUniStr255 {
@@ -71,8 +81,61 @@
 //};
 //typedef struct HFSPlusExtentDescriptor HFSPlusExtentDescriptor;
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct HFSPlusForkData {
+    pub logicalSize: u64,
+    pub clumpSize: u32,
+    pub totalBlocks: u32,
+    pub extents: HFSPlusExtentRecord,
+}
 
-/// Volume Header
+pub type HFSPlusExtentRecord = [HFSPlusExtentDescriptor; 8];
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct HFSPlusExtentDescriptor {
+    pub startBlock: u32,
+    pub blockCount: u32,
+}
+
+impl HFSPlusForkData {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            logicalSize: source.read_u64::<BigEndian>()?,
+            clumpSize: source.read_u32::<BigEndian>()?,
+            totalBlocks: source.read_u32::<BigEndian>()?,
+            extents: import_record(source)?,
+        })
+    }
+}
+
+//impl HFSPlusExtentRecord {
+    //fn import(source: &mut Read) -> io::Result<Self> {
+    fn import_record(source: &mut Read) -> io::Result<HFSPlusExtentRecord> {
+        Ok([
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+           HFSPlusExtentDescriptor::import(source)?,
+        ])
+    }
+//}
+
+impl HFSPlusExtentDescriptor {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            startBlock: source.read_u32::<BigEndian>()?,
+            blockCount: source.read_u32::<BigEndian>()?,
+        })
+    }
+}
+
+
+
+//- Volume Header
 
 //struct HFSPlusVolumeHeader {
 //    UInt16              signature;
@@ -110,7 +173,93 @@
 //    HFSPlusForkData     startupFile;
 //};
 //typedef struct HFSPlusVolumeHeader HFSPlusVolumeHeader;
-//
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct HFSPlusVolumeHeader {
+    pub signature: u16,
+    pub version: u16,
+    pub attributes: VolumeAttributes,
+    pub lastMountedVersion: u32,
+    pub journalInfoBlock: u32,
+
+    pub createDate: u32,
+    pub modifyDate: u32,
+    pub backupDate: u32,
+    pub checkedDate: u32,
+
+    pub fileCount: u32,
+    pub folderCount: u32,
+
+    pub blockSize: u32,
+    pub totalBlocks: u32,
+    pub freeBlocks: u32,
+
+    pub nextAllocation: u32,
+    pub rsrcClumpSize: u32,
+    pub dataClumpSize: u32,
+    pub nextCatalogID: HFSCatalogNodeID,
+
+    pub writeCount: u32,
+    pub encodingsBitmap: u64,
+
+    pub finderInfo: [u32; 8],
+
+    pub allocationFile: HFSPlusForkData,
+    pub extentsFile: HFSPlusForkData,
+    pub catalogFile: HFSPlusForkData,
+    pub attributesFile: HFSPlusForkData,
+    pub startupFile: HFSPlusForkData,
+}
+
+impl HFSPlusVolumeHeader {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            signature: source.read_u16::<BigEndian>()?,
+            version: source.read_u16::<BigEndian>()?,
+            attributes: VolumeAttributes::from_bits_truncate(source.read_u32::<BigEndian>()?),
+            lastMountedVersion: source.read_u32::<BigEndian>()?,
+            journalInfoBlock: source.read_u32::<BigEndian>()?,
+
+            createDate: source.read_u32::<BigEndian>()?,
+            modifyDate: source.read_u32::<BigEndian>()?,
+            backupDate: source.read_u32::<BigEndian>()?,
+            checkedDate: source.read_u32::<BigEndian>()?,
+
+            fileCount: source.read_u32::<BigEndian>()?,
+            folderCount: source.read_u32::<BigEndian>()?,
+
+            blockSize: source.read_u32::<BigEndian>()?,
+            totalBlocks: source.read_u32::<BigEndian>()?,
+            freeBlocks: source.read_u32::<BigEndian>()?,
+
+            nextAllocation: source.read_u32::<BigEndian>()?,
+            rsrcClumpSize: source.read_u32::<BigEndian>()?,
+            dataClumpSize: source.read_u32::<BigEndian>()?,
+            nextCatalogID: source.read_u32::<BigEndian>()?,  // XXX HFSCatalogNodeID,
+
+            writeCount: source.read_u32::<BigEndian>()?,
+            encodingsBitmap: source.read_u64::<BigEndian>()?,
+
+            finderInfo: [
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+            ],
+
+            allocationFile: HFSPlusForkData::import(source)?,
+            extentsFile: HFSPlusForkData::import(source)?,
+            catalogFile: HFSPlusForkData::import(source)?,
+            attributesFile: HFSPlusForkData::import(source)?,
+            startupFile: HFSPlusForkData::import(source)?,
+        })
+    }
+}
+
 //enum {
 //    /* Bits 0-6 are reserved */
 //    kHFSVolumeHardwareLockBit       =  7,
@@ -125,8 +274,31 @@
 //    /* Bits 16-31 are reserved */
 //};
 
+bitflags! {
+    pub struct VolumeAttributes: u32 {
+        /* Bits 0-6 are reserved */
+        const kHFSVolumeHardwareLockBit       = 1 <<  7;
+        const kHFSVolumeUnmountedBit          = 1 <<  8;
+        const kHFSVolumeSparedBlocksBit       = 1 <<  9;
+        const kHFSVolumeNoCacheRequiredBit    = 1 << 10;
+        const kHFSBootVolumeInconsistentBit   = 1 << 11;
+        const kHFSCatalogNodeIDsReusedBit     = 1 << 12;
+        const kHFSVolumeJournaledBit          = 1 << 13;
+        /* Bit 14 is reserved */
+        const kHFSVolumeSoftwareLockBit       = 1 << 15;
+        /* Bits 16-30 are reserved */
+        const kHFSVolumeUnusedNodeFixBit      = 1 << 31;  // Not mentioned in TN1150
+    }
+}
 
-/// B-Trees
+pub const HFSP_SIGNATURE: u16 = 0x482b;  // H+ Signature (Big endian)
+pub const HFSX_SIGNATURE: u16 = 0x4858;  // HFSX Signature (Big endian)
+pub const HFSP_VERSION: u16 = 4;  // H+ Signature (Big endian)
+pub const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
+
+
+
+//- B-Trees
 
 //struct BTNodeDescriptor {
 //    UInt32    fLink;
@@ -145,8 +317,13 @@
 //    kBTHeaderNode     =  1,
 //    kBTMapNode        =  2
 //};
-//
-//
+
+pub const kBTLeafNode     : i8 = -1;
+pub const kBTIndexNode    : i8 =  0;
+pub const kBTHeaderNode   : i8 =  1;
+pub const kBTMapNode      : i8 =  2;
+
+
 //struct BTHeaderRec {
 //    UInt16    treeDepth;
 //    UInt32    rootNode;
@@ -181,7 +358,8 @@
 //};
 
 
-/// Catalog File
+
+//- Catalog File
 
 //typedef UInt32 HFSCatalogNodeID;
 //
@@ -199,6 +377,20 @@
 //    kHFSFirstUserCatalogNodeID  = 16
 //};
 
+pub type HFSCatalogNodeID = u32;
+
+pub const kHFSRootParentID           : HFSCatalogNodeID = 1;
+pub const kHFSRootFolderID           : HFSCatalogNodeID = 2;
+pub const kHFSExtentsFileID          : HFSCatalogNodeID = 3;
+pub const kHFSCatalogFileID          : HFSCatalogNodeID = 4;
+pub const kHFSBadBlockFileID         : HFSCatalogNodeID = 5;
+pub const kHFSAllocationFileID       : HFSCatalogNodeID = 6;
+pub const kHFSStartupFileID          : HFSCatalogNodeID = 7;
+pub const kHFSAttributesFileID       : HFSCatalogNodeID = 8;
+pub const kHFSRepairCatalogFileID    : HFSCatalogNodeID = 14;
+pub const kHFSBogusExtentFileID      : HFSCatalogNodeID = 15;
+pub const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
+
 // Catalog File Key
 //struct HFSPlusCatalogKey {
 //    UInt16              keyLength;
@@ -214,8 +406,13 @@
 //    kHFSPlusFolderThreadRecord  = 0x0003,
 //    kHFSPlusFileThreadRecord    = 0x0004
 //};
-//
-//
+
+const kHFSPlusFolderRecord        : u16 = 0x0001;
+const kHFSPlusFileRecord          : u16 = 0x0002;
+const kHFSPlusFolderThreadRecord  : u16 = 0x0003;
+const kHFSPlusFileThreadRecord    : u16 = 0x0004;
+
+
 //struct HFSPlusCatalogFolder {
 //    SInt16              recordType;
 //    UInt16              flags;
@@ -274,7 +471,8 @@
 //typedef struct HFSPlusCatalogThread HFSPlusCatalogThread;
 
 
-/// Finder Info
+
+//- Finder Info
 // The following is described in Apple's Finder Interface Reference
 
 //struct Point {
@@ -291,12 +489,12 @@
 //};
 //typedef struct Rect   Rect;
 //
-///* OSType is a 32-bit value made by packing four 1-byte characters 
+// /* OSType is a 32-bit value made by packing four 1-byte characters 
 //   together. */
 //typedef UInt32        FourCharCode;
 //typedef FourCharCode  OSType;
 //
-///* Finder flags (finderFlags, fdFlags and frFlags) */
+// /* Finder flags (finderFlags, fdFlags and frFlags) */
 //enum {
 //  kIsOnDesk       = 0x0001,     /* Files and folders (System 6) */
 //  kColor          = 0x000E,     /* Files and folders */
@@ -322,7 +520,7 @@
 //  kIsAlias        = 0x8000      /* Files only */
 //};
 //
-///* Extended flags (extendedFinderFlags, fdXFlags and frXFlags) */
+// /* Extended flags (extendedFinderFlags, fdXFlags and frXFlags) */
 //enum {
 //  kExtendedFlagsAreInvalid    = 0x8000, /* The other extended flags */
 //                                        /* should be ignored */
@@ -370,7 +568,8 @@
 //typedef struct ExtendedFolderInfo   ExtendedFolderInfo;
 
 
-/// Extents Overflow File
+
+//- Extents Overflow File
 
 //struct HFSPlusExtentKey {
 //    UInt16              keyLength;
@@ -382,7 +581,8 @@
 //typedef struct HFSPlusExtentKey HFSPlusExtentKey;
 
 
-/// Attributes File
+
+//- Attributes File
 
 //enum {
 //    kHFSPlusAttrInlineData  = 0x10,
@@ -418,7 +618,8 @@
 //};
 
 
-/// Journal
+
+//- Journal
 
 //struct JournalInfoBlock {
 //    UInt32    flags;
@@ -465,7 +666,8 @@
 //} block_info;
 
 
-/// Hot Files
+
+//- Hot Files
 
 //#define HFC_MAGIC   0xFF28FF26
 //#define HFC_VERSION 1

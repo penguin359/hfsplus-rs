@@ -2,9 +2,12 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::fs::File;
 //use std::io::{Read, Write, Seek};
-use std::io::{Error, ErrorKind, Read, Seek};
+use std::io::{Cursor, Error, ErrorKind, Read, Seek};
 use std::collections::HashMap;
 use std::cmp::Ordering;
+
+use std::fmt;
+
 
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -14,10 +17,11 @@ extern crate bitflags;
 
 extern crate unicode_normalization;
 use unicode_normalization::UnicodeNormalization;
+
+
 use hfs_strings::fast_unicode_compare;
 
 
-use std::fmt;
 
 struct HFSString(Vec<u16>);
 
@@ -122,6 +126,13 @@ impl Eq for HFSString {
 //    parentID: HFSCatalogNodeID,
 //    nodeName: HFSUniStr255,
 //}
+//
+//enum {
+//    kHFSPlusFolderRecord        = 0x0001,
+//    kHFSPlusFileRecord          = 0x0002,
+//    kHFSPlusFolderThreadRecord  = 0x0003,
+//    kHFSPlusFileThreadRecord    = 0x0004
+//};
 
 
 #[derive(Debug)]
@@ -183,16 +194,31 @@ impl Key for CatalogKey {
 }
 
 trait Record {
-    fn new(key: CatalogKey) -> Self;
+    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self>
+        where Self: Sized;
+    fn get_key(&self) -> &CatalogKey;
+}
+
+enum CatalogBody {
+    Folder,
+    File,
+    FolderThread(HFSCatalogNodeID),
+    FileThread(HFSCatalogNodeID),
 }
 
 struct CatalogRecord {
     key: CatalogKey,
+    body: CatalogBody,
 }
 
 impl Record for CatalogRecord {
-    fn new(key: CatalogKey) -> CatalogRecord {
-        CatalogRecord { key }
+    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
+        let record_type = source.read_u16::<BigEndian>()?;
+        Ok(CatalogRecord { key, body: CatalogBody::Folder })
+    }
+
+    fn get_key(&self) -> &CatalogKey {
+        &self.key
     }
 }
 
@@ -212,102 +238,6 @@ impl Record for CatalogRecord {
 //    kHFSBogusExtentFileID       = 15,
 //    kHFSFirstUserCatalogNodeID  = 16
 //};
-
-type HFSCatalogNodeID = u32;
-
-#[allow(non_upper_case_globals, unused_variables)]
-mod hfs {
-use super::HFSCatalogNodeID;
-pub const kHFSRootParentID           : HFSCatalogNodeID = 1;
-pub const kHFSRootFolderID           : HFSCatalogNodeID = 2;
-pub const kHFSExtentsFileID          : HFSCatalogNodeID = 3;
-pub const kHFSCatalogFileID          : HFSCatalogNodeID = 4;
-pub const kHFSBadBlockFileID         : HFSCatalogNodeID = 5;
-pub const kHFSAllocationFileID       : HFSCatalogNodeID = 6;
-pub const kHFSStartupFileID          : HFSCatalogNodeID = 7;
-pub const kHFSAttributesFileID       : HFSCatalogNodeID = 8;
-pub const kHFSRepairCatalogFileID    : HFSCatalogNodeID = 14;
-pub const kHFSBogusExtentFileID      : HFSCatalogNodeID = 15;
-pub const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
-
-pub const kBTLeafNode     :i8  = -1;
-pub const kBTIndexNode    :i8  =  0;
-pub const kBTHeaderNode   :i8  =  1;
-pub const kBTMapNode      :i8  =  2;
-}
-use self::hfs::*;
-
-
-//struct HFSPlusExtentDescriptor {
-//    UInt32                  startBlock;
-//    UInt32                  blockCount;
-//};
-//typedef struct HFSPlusExtentDescriptor HFSPlusExtentDescriptor;
-
-#[allow(non_snake_case)]
-#[derive(Debug, PartialEq, Eq)]
-struct HFSPlusExtentDescriptor {
-    startBlock: u32,
-    blockCount: u32,
-}
-
-
-//struct HFSPlusForkData {
-//    UInt64                  logicalSize;
-//    UInt32                  clumpSize;
-//    UInt32                  totalBlocks;
-//    HFSPlusExtentRecord     extents;
-//};
-//typedef struct HFSPlusForkData HFSPlusForkData;
-//
-//typedef HFSPlusExtentDescriptor HFSPlusExtentRecord[8];
-
-#[allow(non_snake_case)]
-#[derive(Debug, PartialEq, Eq)]
-struct HFSPlusForkData {
-    logicalSize: u64,
-    clumpSize: u32,
-    totalBlocks: u32,
-    extents: HFSPlusExtentRecord,
-}
-
-type HFSPlusExtentRecord = [HFSPlusExtentDescriptor; 8];
-
-impl HFSPlusForkData {
-    fn import(source: &mut Read) -> std::io::Result<Self> {
-        Ok(Self {
-            logicalSize: source.read_u64::<BigEndian>()?,
-            clumpSize: source.read_u32::<BigEndian>()?,
-            totalBlocks: source.read_u32::<BigEndian>()?,
-            extents: import_record(source)?,
-        })
-    }
-}
-
-//impl HFSPlusExtentRecord {
-    //fn import(source: &mut Read) -> std::io::Result<Self> {
-    fn import_record(source: &mut Read) -> std::io::Result<HFSPlusExtentRecord> {
-        Ok([
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-           HFSPlusExtentDescriptor::import(source)?,
-        ])
-    }
-//}
-
-impl HFSPlusExtentDescriptor {
-    fn import(source: &mut Read) -> std::io::Result<Self> {
-        Ok(Self {
-            startBlock: source.read_u32::<BigEndian>()?,
-            blockCount: source.read_u32::<BigEndian>()?,
-        })
-    }
-}
 
 
 //struct BTNodeDescriptor {
@@ -486,7 +416,7 @@ struct IndexNode {
 
 struct LeafNode<R: Record> {
     descriptor: BTNodeDescriptor,
-    records: Vec<R>,
+    records: Vec<Rc<R>>,
 }
 
 enum Node<R: Record> {
@@ -546,11 +476,12 @@ impl<R: Record> Node<R> {
                 descriptor: node,
             }))
         } else if node.kind == kBTLeafNode {
-            let mut r = Vec::<R>::new();
+            let mut r = Vec::<Rc<R>>::new();
             for record in &records {
-                let r2 = CatalogKey::import(&mut &record[..])?;
+                let mut v = Cursor::new(record);
+                let r2 = CatalogKey::import(&mut v)?;
                 println!("File: {:?}", r2);
-                r.push(R::new(r2));
+                r.push(Rc::new(R::import(&mut v, r2)?));
             }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
@@ -637,171 +568,38 @@ impl<R: Record> BTree<R> {
         Ok(node)
         }
     }
+
+    fn get_record_node(&self, key: CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
+        let node = self.get_node(node_id)?;
+        match node {
+            Node::LeafNode(x) => {
+                println!("{:?}", x.descriptor);
+                for record in &x.records {
+                    if key < *record.get_key() {
+                        return Err(HFSError::InvalidRecordKey);
+                    } else if key == *record.get_key() {
+                        return Ok(Rc::clone(record));
+                    }
+                }
+                Err(HFSError::InvalidRecordKey)
+            },
+            _ => {
+                Err(HFSError::InvalidRecordKey)
+            }
+        }
+    }
+
+    fn get_record(&self, key: CatalogKey) -> HFSResult<Rc<R>> {
+        self.get_record_node(key, self.header.header.rootNode as usize)
+    }
 }
 
 type BTreeRc<R> = Rc<RefCell<BTree<R>>>;
 
 
-//enum {
-//    /* Bits 0-6 are reserved */
-//    kHFSVolumeHardwareLockBit       =  7,
-//    kHFSVolumeUnmountedBit          =  8,
-//    kHFSVolumeSparedBlocksBit       =  9,
-//    kHFSVolumeNoCacheRequiredBit    = 10,
-//    kHFSBootVolumeInconsistentBit   = 11,
-//    kHFSCatalogNodeIDsReusedBit     = 12,
-//    kHFSVolumeJournaledBit          = 13,
-//    /* Bit 14 is reserved */
-//    kHFSVolumeSoftwareLockBit       = 15
-//    /* Bits 16-31 are reserved */
-//};
+mod internal;
+use internal::*;
 
-bitflags! {
-    struct VolumeAttributes: u32 {
-        /* Bits 0-6 are reserved */
-        const kHFSVolumeHardwareLockBit       = 1 <<  7;
-        const kHFSVolumeUnmountedBit          = 1 <<  8;
-        const kHFSVolumeSparedBlocksBit       = 1 <<  9;
-        const kHFSVolumeNoCacheRequiredBit    = 1 << 10;
-        const kHFSBootVolumeInconsistentBit   = 1 << 11;
-        const kHFSCatalogNodeIDsReusedBit     = 1 << 12;
-        const kHFSVolumeJournaledBit          = 1 << 13;
-        /* Bit 14 is reserved */
-        const kHFSVolumeSoftwareLockBit       = 1 << 15;
-        /* Bits 16-30 are reserved */
-        const kHFSVolumeUnusedNodeFixBit      = 1 << 31;
-    }
-}
-
-
-//struct HFSPlusVolumeHeader {
-//    UInt16              signature;
-//    UInt16              version;
-//    UInt32              attributes;
-//    UInt32              lastMountedVersion;
-//    UInt32              journalInfoBlock;
-//
-//    UInt32              createDate;
-//    UInt32              modifyDate;
-//    UInt32              backupDate;
-//    UInt32              checkedDate;
-//
-//    UInt32              fileCount;
-//    UInt32              folderCount;
-//
-//    UInt32              blockSize;
-//    UInt32              totalBlocks;
-//    UInt32              freeBlocks;
-//
-//    UInt32              nextAllocation;
-//    UInt32              rsrcClumpSize;
-//    UInt32              dataClumpSize;
-//    HFSCatalogNodeID    nextCatalogID;
-//
-//    UInt32              writeCount;
-//    UInt64              encodingsBitmap;
-//
-//    UInt32              finderInfo[8];
-//
-//    HFSPlusForkData     allocationFile;
-//    HFSPlusForkData     extentsFile;
-//    HFSPlusForkData     catalogFile;
-//    HFSPlusForkData     attributesFile;
-//    HFSPlusForkData     startupFile;
-//};
-//typedef struct HFSPlusVolumeHeader HFSPlusVolumeHeader;
-
-const HFSP_SIGNATURE: u16 = 0x482b;  // H+ Signature (Big endian)
-const HFSX_SIGNATURE: u16 = 0x4858;  // HFSX Signature (Big endian)
-const HFSP_VERSION: u16 = 4;  // H+ Signature (Big endian)
-const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
-
-#[allow(non_snake_case)]
-#[derive(Debug, PartialEq, Eq)]
-struct HFSPlusVolumeHeader {
-    signature: u16,
-    version: u16,
-    attributes: VolumeAttributes,
-    lastMountedVersion: u32,
-    journalInfoBlock: u32,
-
-    createDate: u32,
-    modifyDate: u32,
-    backupDate: u32,
-    checkedDate: u32,
-
-    fileCount: u32,
-    folderCount: u32,
-
-    blockSize: u32,
-    totalBlocks: u32,
-    freeBlocks: u32,
-
-    nextAllocation: u32,
-    rsrcClumpSize: u32,
-    dataClumpSize: u32,
-    nextCatalogID: HFSCatalogNodeID,
-
-    writeCount: u32,
-    encodingsBitmap: u64,
-
-    finderInfo: [u32; 8],
-
-    allocationFile: HFSPlusForkData,
-    extentsFile: HFSPlusForkData,
-    catalogFile: HFSPlusForkData,
-    attributesFile: HFSPlusForkData,
-    startupFile: HFSPlusForkData,
-}
-
-impl HFSPlusVolumeHeader {
-    fn import(source: &mut Read) -> std::io::Result<Self> {
-        Ok(Self {
-            signature: source.read_u16::<BigEndian>()?,
-            version: source.read_u16::<BigEndian>()?,
-            attributes: VolumeAttributes::from_bits_truncate(source.read_u32::<BigEndian>()?),
-            lastMountedVersion: source.read_u32::<BigEndian>()?,
-            journalInfoBlock: source.read_u32::<BigEndian>()?,
-
-            createDate: source.read_u32::<BigEndian>()?,
-            modifyDate: source.read_u32::<BigEndian>()?,
-            backupDate: source.read_u32::<BigEndian>()?,
-            checkedDate: source.read_u32::<BigEndian>()?,
-
-            fileCount: source.read_u32::<BigEndian>()?,
-            folderCount: source.read_u32::<BigEndian>()?,
-
-            blockSize: source.read_u32::<BigEndian>()?,
-            totalBlocks: source.read_u32::<BigEndian>()?,
-            freeBlocks: source.read_u32::<BigEndian>()?,
-
-            nextAllocation: source.read_u32::<BigEndian>()?,
-            rsrcClumpSize: source.read_u32::<BigEndian>()?,
-            dataClumpSize: source.read_u32::<BigEndian>()?,
-            nextCatalogID: source.read_u32::<BigEndian>()?,  // XXX HFSCatalogNodeID,
-
-            writeCount: source.read_u32::<BigEndian>()?,
-            encodingsBitmap: source.read_u64::<BigEndian>()?,
-
-            finderInfo: [
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-            ],
-
-            allocationFile: HFSPlusForkData::import(source)?,
-            extentsFile: HFSPlusForkData::import(source)?,
-            catalogFile: HFSPlusForkData::import(source)?,
-            attributesFile: HFSPlusForkData::import(source)?,
-            startupFile: HFSPlusForkData::import(source)?,
-        })
-    }
-}
 
 
 struct Fork {

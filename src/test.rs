@@ -400,3 +400,39 @@ fn check_small_hfs_btree() {
     let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let mut node_num = btree.header.header.firstLeafNode;
 }
+
+#[test]
+fn load_root_thread_record() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(root_thread_key);
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    //let thread = match thread_record_res.unwrap().body {
+    //    CatalogBody::FolderThread(x) => {
+    //        x
+    //    },
+    //    _ => {
+    //        assert!(false, "Not a folder thread record");
+    //    },
+    //};
+    //let root_key = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("BLANK") };
+    //assert_eq!(thread.parent_id, 1);
+    //assert_eq!(thread.node_name, root_key.node_name);
+    //assert_eq!(tree_header.lastLeafNode, 1);
+    //let node = btree.get_node(tree_header.rootNode as usize);
+    //assert!(node.is_ok());
+    //let node = node.unwrap();
+    //match node {
+    //    Node::LeafNode(x) => {
+    //        assert_eq!(x.descriptor.numRecords, 2);
+    //        assert_eq!(x.descriptor.numRecords as usize, x.records.len());
+    //        assert_eq!(x.records[0].key.parent_id, 1);
+    //        assert_eq!(x.records[1].key.parent_id, 2);
+    //    },
+    //    _ => {
+    //        assert!(false, "Wrong root node type");
+    //    }
+    //};
+}
