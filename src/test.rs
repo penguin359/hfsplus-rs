@@ -502,7 +502,7 @@ fn load_root_folder_record() {
 fn load_blank_root_folder_listing() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(&root_thread_key);
     if thread_record_res.is_err() {
@@ -532,7 +532,7 @@ fn load_blank_root_folder_listing() {
             assert!(false, "Not a folder record"); return;
         },
     };
-    let children_res = btree.get_children(thread);
+    let children_res = vol2.get_children(thread);
     if children_res.is_err() {
         println!("{:?}", children_res.as_ref().err().unwrap());
     }
@@ -545,7 +545,7 @@ fn load_blank_root_folder_listing() {
 fn load_small_root_folder_listing() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(&root_thread_key);
     if thread_record_res.is_err() {
@@ -575,11 +575,158 @@ fn load_small_root_folder_listing() {
             assert!(false, "Not a folder record"); return;
         },
     };
-    let children_res = btree.get_children(thread);
+    let children_res = vol2.get_children(thread);
     if children_res.is_err() {
         println!("{:?}", children_res.as_ref().err().unwrap());
     }
     assert!(children_res.is_ok(), "Failed to search for children");
     let children = children_res.unwrap();
-    assert_eq!(children.len(), 0);
+    assert_ne!(children.len(), 0);
+    //let names = children.filter_map(|item| match item {
+    //    CatalogBody::Folder(_) => {
+    //        item.key.node_name.to_string()
+    //    },
+    //    _ => None
+    //});
+}
+
+#[test]
+fn test_btree_get_record_range_blank() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+    let tree_header = &btree.header.header;
+    assert_eq!(tree_header.treeDepth, 1);  // This test expects only leaf nodes
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(&root_thread_key);
+    if thread_record_res.is_err() {
+        println!("{:?}", thread_record_res.as_ref().err().unwrap());
+    }
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_record_res = btree.get_record(thread);
+    if root_record_res.is_err() {
+        println!("{:?}", root_record_res.as_ref().err().unwrap());
+    }
+    assert!(root_record_res.is_ok(), "Failed to find root record");
+    let result = root_record_res.unwrap();
+    let folder = match result.body {
+        CatalogBody::Folder(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder record"); return;
+        },
+    };
+    let first = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 5, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
+
+    let first = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
+
+    let first = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 20, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
+}
+
+#[test]
+fn test_btree_get_record_range_small() {
+    let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+    let tree_header = &btree.header.header;
+    assert_eq!(tree_header.treeDepth, 2);  // This test expects index nodes
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(&root_thread_key);
+    if thread_record_res.is_err() {
+        println!("{:?}", thread_record_res.as_ref().err().unwrap());
+    }
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_record_res = btree.get_record(thread);
+    if root_record_res.is_err() {
+        println!("{:?}", root_record_res.as_ref().err().unwrap());
+    }
+    assert!(root_record_res.is_ok(), "Failed to find root record");
+    let result = root_record_res.unwrap();
+    let folder = match result.body {
+        CatalogBody::Folder(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder record"); return;
+        },
+    };
+
+    let first = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 5, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
+
+    let first = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
+
+    let first = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("") };
+    let last = CatalogKey { _case_match: false, parent_id: 20, node_name: HFSString::from("") };
+    let records_res = btree.get_record_range(&first, &last);
+    assert!(records_res.is_ok(), "Failed to get record range");
+    let records = records_res.unwrap();
+    assert!(records.len() > 0);
+    assert!(records[0].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[0].get_key() < &last, "First key after end of range (exclusive)");
+    assert!(records[records.len()-1].get_key() >= &first, "First key before beginning of range (inclusive)");
+    assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
 }

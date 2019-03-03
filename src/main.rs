@@ -631,6 +631,45 @@ impl<R: Record> BTree<R> {
         }
     }
 
+    fn get_record_range_node(&self, first: &CatalogKey, last: &CatalogKey, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
+        let node = self.get_node(node_id)?;
+        match node {
+            Node::IndexNode(x) => {
+                println!("{:?}", x.descriptor);
+                let mut return_record = &x.records[0];
+                if return_record.get_key() >= last {
+                    return Ok(Vec::new());
+                }
+                for record in x.records.iter().skip(1) {
+                    if first < record.get_key() {
+                        break;
+                    }
+                    return_record = record;
+                }
+                self.get_record_range_node(first, last, return_record.node_id as usize)
+            },
+            Node::LeafNode(x) => {
+                println!("{:?}", x.descriptor);
+                let mut return_records = Vec::new();
+                println!("Foobar");
+                println!("First: {:?}", first);
+                println!("Last: {:?}", last);
+                for record in &x.records {
+                    if record.get_key() >= last {
+                        break;
+                    } else if record.get_key() >= first {
+                        println!("{:?}", record.get_key());
+                        return_records.push(Rc::clone(record));
+                    }
+                }
+                Ok(return_records)
+            },
+            _ => {
+                Err(HFSError::InvalidRecordType)
+            }
+        }
+    }
+
     fn get_record_node(&self, key: &CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
@@ -669,9 +708,8 @@ impl<R: Record> BTree<R> {
         self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 
-    fn get_children(&self, key: &CatalogKey) -> HFSResult<Vec<Rc<R>>> {
-        //Err(HFSError::InvalidRecordKey)
-        Ok(Vec::new())
+    fn get_record_range(&self, first: &CatalogKey, last: &CatalogKey) -> HFSResult<Vec<Rc<R>>> {
+        self.get_record_range_node(first, last, self.header.header.rootNode as usize)
     }
 }
 
@@ -789,6 +827,41 @@ impl HFSVolume {
     fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
+    }
+
+    fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+        let btree = self.catalog_btree.as_ref().unwrap().borrow();
+        let first = CatalogKey { _case_match: false, parent_id: node_id, node_name: HFSString::from("") };
+        let last = CatalogKey { _case_match: false, parent_id: node_id+1, node_name: HFSString::from("") };
+        //match btree.get_record_range(&first, &last) {
+        //    Ok(x) => Ok(x.iter().filter(|item| match item {
+        //    _ => true
+        //}).collect()),
+        //    Err(x) => Err(x)
+        //}
+        let r = btree.get_record_range(&first, &last);
+        match r {
+            Ok(x) => {
+                Ok(x.into_iter().filter(|item| {println!("{:?}", item.get_key()); match item.body {
+                    CatalogBody::File(_) => true,
+                    _ => false,
+                }}).collect())
+            },
+            Err(x) => Err(x),
+        }
+        //    Ok(x) => Ok(x.iter().filter(|item| match item {
+        //    _ => true
+        //}).collect()),
+        //    Err(x) => Err(x)
+        //}
+    }
+
+    fn get_children(&self, key: &CatalogKey) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+        let btree = self.catalog_btree.as_ref().unwrap().borrow();
+        match &btree.get_record(key)?.body {
+            CatalogBody::Folder(x) => self.get_children_id(x.folderID),
+            _ => Err(HFSError::InvalidRecordKey)
+        }
     }
 }
 
