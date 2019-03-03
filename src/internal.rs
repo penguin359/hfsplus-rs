@@ -63,6 +63,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 //#define S_IFSOCK 0140000    /* socket */
 //#define S_IFWHT  0160000    /* whiteout */
 
+#[derive(Debug)]
 pub struct HFSPlusBSDInfo {
     pub ownerID:	        u32,
     pub groupID:	        u32,
@@ -453,8 +454,9 @@ pub const kHFSPlusFileThreadRecord    : i16 = 0x0004;
 //};
 //typedef struct HFSPlusCatalogFolder HFSPlusCatalogFolder;
 
+#[derive(Debug)]
 pub struct HFSPlusCatalogFolder {
-    pub recordType:	        i16,
+    //pub recordType:	        i16,
     pub flags:	                u16,
     pub valence:	        u32,
     pub folderID:	        HFSCatalogNodeID,
@@ -471,9 +473,9 @@ pub struct HFSPlusCatalogFolder {
 }
 
 impl HFSPlusCatalogFolder {
-    fn import(source: &mut Read) -> io::Result<Self> {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            recordType:	        source.read_i16::<BigEndian>()?,
+            //recordType:	        source.read_i16::<BigEndian>()?,
             flags:	        source.read_u16::<BigEndian>()?,
             valence:	        source.read_u32::<BigEndian>()?,
             folderID:	        source.read_u32::<BigEndian>()?,  // HFSCatalogNodeID
@@ -541,6 +543,7 @@ impl HFSPlusCatalogFolder {
 //};
 //typedef struct Point  Point;
 
+#[derive(Debug)]
 pub struct Point {
     pub v:	                i16,
     pub h:	                i16,
@@ -564,6 +567,7 @@ impl Point {
 //};
 //typedef struct Rect   Rect;
 
+#[derive(Debug)]
 pub struct Rect {
     pub top:	                i16,
     pub left:	                i16,
@@ -674,6 +678,7 @@ impl ExtendedFileInfo {
 //};
 //typedef struct FolderInfo   FolderInfo;
 
+#[derive(Debug)]
 pub struct FolderInfo {
     pub windowBounds:	        Rect,   /* The position and dimension of the */
                                         /* folder's window */
@@ -704,6 +709,7 @@ impl FolderInfo {
 //};
 //typedef struct ExtendedFolderInfo   ExtendedFolderInfo;
 
+#[derive(Debug)]
 pub struct ExtendedFolderInfo {
     pub scrollPosition:	        Point,  /* Scroll position (for icon views) */
     pub reserved1:              i32,

@@ -374,7 +374,9 @@ fn check_blank_hfs_btree() {
     assert_eq!(tree_header.firstLeafNode, 1);
     assert_eq!(tree_header.lastLeafNode, 1);
     let node = btree.get_node(tree_header.rootNode as usize);
-    //println!("{:?}", node.as_ref().err().unwrap());
+    if node.is_err() {
+        println!("{:?}", node.as_ref().err().unwrap());
+    }
     assert!(node.is_ok());
     let node = node.unwrap();
     match node {
@@ -394,8 +396,31 @@ fn check_blank_hfs_btree() {
 fn check_small_hfs_btree() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    //let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
-    //let mut node_num = btree.header.header.firstLeafNode;
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let tree_header = &btree.header.header;
+    assert_eq!(tree_header.treeDepth, 2);
+    // Multiple leaf nodes are requires so all values
+    // must be different
+    assert_ne!(tree_header.rootNode, tree_header.firstLeafNode);
+    assert_ne!(tree_header.rootNode, tree_header.lastLeafNode);
+    assert_ne!(tree_header.firstLeafNode, tree_header.lastLeafNode);
+    let node = btree.get_node(tree_header.rootNode as usize);
+    if node.is_err() {
+        println!("{:?}", node.as_ref().err().unwrap());
+    }
+    assert!(node.is_ok());
+    let node = node.unwrap();
+    match node {
+        Node::IndexNode(x) => {
+            assert_eq!(x.descriptor.numRecords, 3);
+            assert_eq!(x.descriptor.numRecords as usize, x.records.len());
+            assert_eq!(x.records[0], tree_header.firstLeafNode);
+            assert_eq!(x.records[2], tree_header.lastLeafNode);
+        },
+        _ => {
+            assert!(false, "Wrong root node type");
+        }
+    };
 }
 
 #[test]
@@ -443,6 +468,9 @@ fn load_root_folder_record() {
     let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(&root_thread_key);
+    if thread_record_res.is_err() {
+        println!("{:?}", thread_record_res.as_ref().err().unwrap());
+    }
     assert!(thread_record_res.is_ok(), "Failed to find root thread record");
     let result = thread_record_res.unwrap();
     let thread = match result.body {
@@ -454,14 +482,104 @@ fn load_root_folder_record() {
         },
     };
     let root_record_res = btree.get_record(thread);
+    if root_record_res.is_err() {
+        println!("{:?}", root_record_res.as_ref().err().unwrap());
+    }
     assert!(root_record_res.is_ok(), "Failed to find root record");
     let result = root_record_res.unwrap();
-    let thread = match result.body {
-        CatalogBody::Folder => {
-            0
+    let folder = match result.body {
+        CatalogBody::Folder(ref x) => {
+            x
         },
         _ => {
             assert!(false, "Not a folder record"); return;
         },
     };
+    println!("{:?}", folder);
+}
+
+#[test]
+fn load_blank_root_folder_listing() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(&root_thread_key);
+    if thread_record_res.is_err() {
+        println!("{:?}", thread_record_res.as_ref().err().unwrap());
+    }
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_record_res = btree.get_record(thread);
+    if root_record_res.is_err() {
+        println!("{:?}", root_record_res.as_ref().err().unwrap());
+    }
+    assert!(root_record_res.is_ok(), "Failed to find root record");
+    let result = root_record_res.unwrap();
+    let folder = match result.body {
+        CatalogBody::Folder(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder record"); return;
+        },
+    };
+    let children_res = btree.get_children(thread);
+    if children_res.is_err() {
+        println!("{:?}", children_res.as_ref().err().unwrap());
+    }
+    assert!(children_res.is_ok(), "Failed to search for children");
+    let children = children_res.unwrap();
+    assert_eq!(children.len(), 0);
+}
+
+//#[test]
+fn load_small_root_folder_listing() {
+    let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(&root_thread_key);
+    if thread_record_res.is_err() {
+        println!("{:?}", thread_record_res.as_ref().err().unwrap());
+    }
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_record_res = btree.get_record(thread);
+    if root_record_res.is_err() {
+        println!("{:?}", root_record_res.as_ref().err().unwrap());
+    }
+    assert!(root_record_res.is_ok(), "Failed to find root record");
+    let result = root_record_res.unwrap();
+    let folder = match result.body {
+        CatalogBody::Folder(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder record"); return;
+        },
+    };
+    let children_res = btree.get_children(thread);
+    if children_res.is_err() {
+        println!("{:?}", children_res.as_ref().err().unwrap());
+    }
+    assert!(children_res.is_ok(), "Failed to search for children");
+    let children = children_res.unwrap();
+    assert_eq!(children.len(), 0);
 }
