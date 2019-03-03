@@ -374,6 +374,7 @@ fn check_blank_hfs_btree() {
     assert_eq!(tree_header.firstLeafNode, 1);
     assert_eq!(tree_header.lastLeafNode, 1);
     let node = btree.get_node(tree_header.rootNode as usize);
+    //println!("{:?}", node.as_ref().err().unwrap());
     assert!(node.is_ok());
     let node = node.unwrap();
     match node {
@@ -403,7 +404,7 @@ fn load_root_thread_record() {
     let vol2 = volume.borrow();
     let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-    let thread_record_res = btree.get_record(root_thread_key);
+    let thread_record_res = btree.get_record(&root_thread_key);
     assert!(thread_record_res.is_ok(), "Failed to find root thread record");
     let result = thread_record_res.unwrap();
     let thread = match result.body {
@@ -433,4 +434,34 @@ fn load_root_thread_record() {
     //        assert!(false, "Wrong root node type");
     //    }
     //};
+}
+
+#[test]
+fn load_root_folder_record() {
+    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+    let vol2 = volume.borrow();
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let thread_record_res = btree.get_record(&root_thread_key);
+    assert!(thread_record_res.is_ok(), "Failed to find root thread record");
+    let result = thread_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::FolderThread(ref x) => {
+            x
+        },
+        _ => {
+            assert!(false, "Not a folder thread record"); return;
+        },
+    };
+    let root_record_res = btree.get_record(thread);
+    assert!(root_record_res.is_ok(), "Failed to find root record");
+    let result = root_record_res.unwrap();
+    let thread = match result.body {
+        CatalogBody::Folder => {
+            0
+        },
+        _ => {
+            assert!(false, "Not a folder record"); return;
+        },
+    };
 }

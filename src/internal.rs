@@ -63,6 +63,28 @@ use byteorder::{BigEndian, ReadBytesExt};
 //#define S_IFSOCK 0140000    /* socket */
 //#define S_IFWHT  0160000    /* whiteout */
 
+pub struct HFSPlusBSDInfo {
+    pub ownerID:	        u32,
+    pub groupID:	        u32,
+    pub adminFlags:	        u8,
+    pub ownerFlags:	        u8,
+    pub fileMode:	        u16,
+    pub special:	        u32,
+}
+
+impl HFSPlusBSDInfo {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            ownerID:	        source.read_u32::<BigEndian>()?,
+            groupID:	        source.read_u32::<BigEndian>()?,
+            adminFlags:	        source.read_u8()?,
+            ownerFlags:	        source.read_u8()?,
+            fileMode:	        source.read_u16::<BigEndian>()?,
+            special:	        source.read_u32::<BigEndian>()?,
+        })
+    }
+}
+
 
 // Fork Data Structure
 //struct HFSPlusForkData {
@@ -407,10 +429,10 @@ pub const kHFSFirstUserCatalogNodeID : HFSCatalogNodeID = 16;
 //    kHFSPlusFileThreadRecord    = 0x0004
 //};
 
-const kHFSPlusFolderRecord        : u16 = 0x0001;
-const kHFSPlusFileRecord          : u16 = 0x0002;
-const kHFSPlusFolderThreadRecord  : u16 = 0x0003;
-const kHFSPlusFileThreadRecord    : u16 = 0x0004;
+pub const kHFSPlusFolderRecord        : i16 = 0x0001;
+pub const kHFSPlusFileRecord          : i16 = 0x0002;
+pub const kHFSPlusFolderThreadRecord  : i16 = 0x0003;
+pub const kHFSPlusFileThreadRecord    : i16 = 0x0004;
 
 
 //struct HFSPlusCatalogFolder {
@@ -430,8 +452,46 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //    UInt32              reserved;
 //};
 //typedef struct HFSPlusCatalogFolder HFSPlusCatalogFolder;
-//
-//
+
+pub struct HFSPlusCatalogFolder {
+    pub recordType:	        i16,
+    pub flags:	                u16,
+    pub valence:	        u32,
+    pub folderID:	        HFSCatalogNodeID,
+    pub createDate:	        u32,
+    pub contentModDate:         u32,
+    pub attributeModDate:       u32,
+    pub accessDate:	        u32,
+    pub backupDate:	        u32,
+    pub permissions:            HFSPlusBSDInfo,
+    pub userInfo:	        FolderInfo,
+    pub finderInfo:	        ExtendedFolderInfo,
+    pub textEncoding:           u32,
+    pub reserved:	        u32,
+}
+
+impl HFSPlusCatalogFolder {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            recordType:	        source.read_i16::<BigEndian>()?,
+            flags:	        source.read_u16::<BigEndian>()?,
+            valence:	        source.read_u32::<BigEndian>()?,
+            folderID:	        source.read_u32::<BigEndian>()?,  // HFSCatalogNodeID
+            createDate:	        source.read_u32::<BigEndian>()?,
+            contentModDate:     source.read_u32::<BigEndian>()?,
+            attributeModDate:   source.read_u32::<BigEndian>()?,
+            accessDate:	        source.read_u32::<BigEndian>()?,
+            backupDate:	        source.read_u32::<BigEndian>()?,
+            permissions:        HFSPlusBSDInfo::import(source)?,
+            userInfo:	        FolderInfo::import(source)?,
+            finderInfo:	        ExtendedFolderInfo::import(source)?,
+            textEncoding:       source.read_u32::<BigEndian>()?,
+            reserved:	        source.read_u32::<BigEndian>()?,
+        })
+    }
+}
+
+
 //struct HFSPlusCatalogFile {
 //    SInt16              recordType;
 //    UInt16              flags;
@@ -480,7 +540,22 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //  SInt16              h;
 //};
 //typedef struct Point  Point;
-//
+
+pub struct Point {
+    pub v:	                i16,
+    pub h:	                i16,
+}
+
+impl Point {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            v:	                source.read_i16::<BigEndian>()?,
+            h:	                source.read_i16::<BigEndian>()?,
+        })
+    }
+}
+
+
 //struct Rect {
 //  SInt16              top;
 //  SInt16              left;
@@ -488,7 +563,25 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //  SInt16              right;
 //};
 //typedef struct Rect   Rect;
-//
+
+pub struct Rect {
+    pub top:	                i16,
+    pub left:	                i16,
+    pub bottom:	                i16,
+    pub right:	                i16,
+}
+
+impl Rect {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            top:	        source.read_i16::<BigEndian>()?,
+            left:	        source.read_i16::<BigEndian>()?,
+            bottom:	        source.read_i16::<BigEndian>()?,
+            right:	        source.read_i16::<BigEndian>()?,
+        })
+    }
+}
+
 // /* OSType is a 32-bit value made by packing four 1-byte characters 
 //   together. */
 //typedef UInt32        FourCharCode;
@@ -546,7 +639,30 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //  SInt32    putAwayFolderID;
 //};
 //typedef struct ExtendedFileInfo   ExtendedFileInfo;
-//
+
+pub struct ExtendedFileInfo {
+    pub reserved1:        	[i16; 4],
+    pub extendedFinderFlags:	u16,
+    pub reserved2:              i16,
+    pub putAwayFolderID:        i32,
+}
+
+impl ExtendedFileInfo {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            reserved1:	        [
+                source.read_i16::<BigEndian>()?,
+                source.read_i16::<BigEndian>()?,
+                source.read_i16::<BigEndian>()?,
+                source.read_i16::<BigEndian>()?,
+            ],
+            extendedFinderFlags:source.read_u16::<BigEndian>()?,
+            reserved2:	        source.read_i16::<BigEndian>()?,
+            putAwayFolderID:	source.read_i32::<BigEndian>()?,
+        })
+    }
+}
+
 //struct FolderInfo {
 //  Rect      windowBounds;       /* The position and dimension of the */
 //                                /* folder's window */
@@ -557,7 +673,28 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //  UInt16    reservedField;
 //};
 //typedef struct FolderInfo   FolderInfo;
-//
+
+pub struct FolderInfo {
+    pub windowBounds:	        Rect,   /* The position and dimension of the */
+                                        /* folder's window */
+    pub finderFlags:	        u16,
+    pub location:	        Point,  /* Folder's location in the parent */
+                                        /* folder. If set to {0, 0}, the Finder */
+                                        /* will place the item automatically */
+    pub reservedField:	        u16,
+}
+
+impl FolderInfo {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            windowBounds:       Rect::import(source)?,
+            finderFlags:        source.read_u16::<BigEndian>()?,
+            location:           Point::import(source)?,
+            reservedField:      source.read_u16::<BigEndian>()?,
+        })
+    }
+}
+
 //struct ExtendedFolderInfo {
 //  Point     scrollPosition;     /* Scroll position (for icon views) */
 //  SInt32    reserved1;
@@ -566,6 +703,26 @@ const kHFSPlusFileThreadRecord    : u16 = 0x0004;
 //  SInt32    putAwayFolderID;
 //};
 //typedef struct ExtendedFolderInfo   ExtendedFolderInfo;
+
+pub struct ExtendedFolderInfo {
+    pub scrollPosition:	        Point,  /* Scroll position (for icon views) */
+    pub reserved1:              i32,
+    pub extendedFinderFlags:    u16,
+    pub reserved2:              i16,
+    pub putAwayFolderID:        i32,
+}
+
+impl ExtendedFolderInfo {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            scrollPosition:	Point::import(source)?,
+            reserved1:          source.read_i32::<BigEndian>()?,
+            extendedFinderFlags:source.read_u16::<BigEndian>()?,
+            reserved2:          source.read_i16::<BigEndian>()?,
+            putAwayFolderID:    source.read_i32::<BigEndian>()?,
+        })
+    }
+}
 
 
 

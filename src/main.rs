@@ -228,7 +228,14 @@ impl Record for CatalogRecord {
                 }
                 let to_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString(node_name) };
                 CatalogBody::FolderThread(to_key)
-            }
+            },
+            kHFSPlusFolderRecord => {
+                CatalogBody::Folder
+            },
+            _ => {
+                //return Err(HFSError::InvalidRecordType);
+                return Err(Error::new(ErrorKind::InvalidData, "Invalid Record Type"));
+            },
         };
         Ok(CatalogRecord { key, body })
     }
@@ -392,6 +399,7 @@ enum HFSError {
     IOError(Error),
     BadNode,
     InvalidRecordKey,
+    InvalidRecordType,
 }
 
 impl From<Error> for HFSError {
@@ -585,15 +593,15 @@ impl<R: Record> BTree<R> {
         }
     }
 
-    fn get_record_node(&self, key: CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
+    fn get_record_node(&self, key: &CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::LeafNode(x) => {
                 println!("{:?}", x.descriptor);
                 for record in &x.records {
-                    if key < *record.get_key() {
+                    if key < record.get_key() {
                         return Err(HFSError::InvalidRecordKey);
-                    } else if key == *record.get_key() {
+                    } else if key == record.get_key() {
                         return Ok(Rc::clone(record));
                     }
                 }
@@ -605,8 +613,8 @@ impl<R: Record> BTree<R> {
         }
     }
 
-    fn get_record(&self, key: CatalogKey) -> HFSResult<Rc<R>> {
-        self.get_record_node(key, self.header.header.rootNode as usize)
+    fn get_record(&self, key: &CatalogKey) -> HFSResult<Rc<R>> {
+        self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 }
 
