@@ -414,8 +414,8 @@ fn check_small_hfs_btree() {
         Node::IndexNode(x) => {
             assert_eq!(x.descriptor.numRecords, 3);
             assert_eq!(x.descriptor.numRecords as usize, x.records.len());
-            assert_eq!(x.records[0], tree_header.firstLeafNode);
-            assert_eq!(x.records[2], tree_header.lastLeafNode);
+            assert_eq!(x.records[0].node_id, tree_header.firstLeafNode);
+            assert_eq!(x.records[2].node_id, tree_header.lastLeafNode);
         },
         _ => {
             assert!(false, "Wrong root node type");
@@ -541,7 +541,7 @@ fn load_blank_root_folder_listing() {
     assert_eq!(children.len(), 0);
 }
 
-//#[test]
+#[test]
 fn load_small_root_folder_listing() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();

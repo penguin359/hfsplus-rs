@@ -9,6 +9,9 @@ use std::cmp::Ordering;
 use std::fmt;
 
 
+extern crate backtrace;
+use backtrace::Backtrace;
+
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -126,13 +129,6 @@ impl Eq for HFSString {
 //    parentID: HFSCatalogNodeID,
 //    nodeName: HFSUniStr255,
 //}
-//
-//enum {
-//    kHFSPlusFolderRecord        = 0x0001,
-//    kHFSPlusFileRecord          = 0x0002,
-//    kHFSPlusFolderThreadRecord  = 0x0003,
-//    kHFSPlusFileThreadRecord    = 0x0004
-//};
 
 
 #[derive(Debug)]
@@ -199,9 +195,25 @@ trait Record {
     fn get_key(&self) -> &CatalogKey;
 }
 
+struct IndexRecord {
+    key: CatalogKey,
+    node_id: u32,
+}
+
+impl Record for IndexRecord {
+    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
+        let node_id = source.read_u32::<BigEndian>()?;
+        Ok(IndexRecord { key, node_id })
+    }
+
+    fn get_key(&self) -> &CatalogKey {
+        &self.key
+    }
+}
+
 enum CatalogBody {
     Folder(HFSPlusCatalogFolder),
-    File,
+    File(HFSPlusCatalogFile),
     FolderThread(CatalogKey),
     FileThread(CatalogKey),
 }
@@ -215,6 +227,12 @@ impl Record for CatalogRecord {
     fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
         let record_type = source.read_i16::<BigEndian>()?;
         let body = match record_type {
+            internal::kHFSPlusFolderRecord => {
+                CatalogBody::Folder(HFSPlusCatalogFolder::import(source)?)
+            },
+            internal::kHFSPlusFileRecord => {
+                CatalogBody::File(HFSPlusCatalogFile::import(source)?)
+            },
             internal::kHFSPlusFolderThreadRecord => {
                 let _reserved = source.read_i16::<BigEndian>()?;
                 let parent_id = source.read_u32::<BigEndian>()?;
@@ -229,12 +247,23 @@ impl Record for CatalogRecord {
                 let to_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString(node_name) };
                 CatalogBody::FolderThread(to_key)
             },
-            internal::kHFSPlusFolderRecord => {
-                CatalogBody::Folder(HFSPlusCatalogFolder::import(source)?)
+            internal::kHFSPlusFileThreadRecord => {
+                let _reserved = source.read_i16::<BigEndian>()?;
+                let parent_id = source.read_u32::<BigEndian>()?;
+                let count = source.read_u16::<BigEndian>()?;
+                //if key_length != count*2 + 6 {
+                //    return Err(HFSError::InvalidRecordKey);
+                //}
+                let mut node_name = Vec::with_capacity(count as usize);
+                for _ in 0..count as usize {
+                    node_name.push(source.read_u16::<BigEndian>()?);
+                }
+                let to_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString(node_name) };
+                CatalogBody::FileThread(to_key)
             },
             _ => {
                 //return Err(HFSError::InvalidRecordType);
-                return Err(Error::new(ErrorKind::InvalidData, "Invalid Record Type"));
+                return Err(Error::new(ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
             },
         };
         Ok(CatalogRecord { key, body })
@@ -436,7 +465,7 @@ struct MapNode {
 
 struct IndexNode {
     descriptor: BTNodeDescriptor,
-    records: Vec<u32>,
+    records: Vec<IndexRecord>,
 }
 
 struct LeafNode<R: Record> {
@@ -497,13 +526,12 @@ impl<R: Record> Node<R> {
                 _descriptor: node,
             }))
         } else if node.kind == kBTIndexNode {
-            let mut r = Vec::<u32>::new();
+            let mut r = Vec::<IndexRecord>::new();
             for record in &records {
                 let mut v = Cursor::new(record);
                 let r2 = CatalogKey::import(&mut v)?;
                 println!("File: {:?}", r2);
-                //r.push(Rc::new(R::import(&mut v, r2)?));
-                r.push(v.read_u32::<BigEndian>()?);
+                r.push(IndexRecord::import(&mut v, r2)?);
             }
             Ok(Node::IndexNode(IndexNode {
                 descriptor: node,
@@ -606,6 +634,20 @@ impl<R: Record> BTree<R> {
     fn get_record_node(&self, key: &CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
+            Node::IndexNode(x) => {
+                println!("{:?}", x.descriptor);
+                let mut return_record = &x.records[0];
+                if key < return_record.get_key() {
+                    return Err(HFSError::InvalidRecordKey);
+                }
+                for record in x.records.iter().skip(1) {
+                    if key < record.get_key() {
+                        break;
+                    }
+                    return_record = record;
+                }
+                self.get_record_node(&key, return_record.node_id as usize)
+            },
             Node::LeafNode(x) => {
                 println!("{:?}", x.descriptor);
                 for record in &x.records {

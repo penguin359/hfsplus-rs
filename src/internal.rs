@@ -522,8 +522,51 @@ impl HFSPlusCatalogFolder {
 //    kHFSThreadExistsBit     = 0x0001,
 //    kHFSThreadExistsMask    = 0x0002
 //};
-//
-//
+
+pub struct HFSPlusCatalogFile {
+    //pub recordType:	        i16,
+    pub flags:	                u16,
+    pub reserved1:              u32,
+    pub fileID:	                HFSCatalogNodeID,
+    pub createDate:             u32,
+    pub contentModDate:         u32,
+    pub attributeModDate:       u32,
+    pub accessDate:             u32,
+    pub backupDate:             u32,
+    pub permissions:            HFSPlusBSDInfo,
+    pub userInfo:               FileInfo,
+    pub finderInfo:             ExtendedFileInfo,
+    pub textEncoding:           u32,
+    pub reserved2:              u32,
+ 
+    pub dataFork:               HFSPlusForkData,
+    pub resourceFork:           HFSPlusForkData,
+}
+
+impl HFSPlusCatalogFile {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            //recordType:	        source.read_i16::<BigEndian>()?,
+            flags:	        source.read_u16::<BigEndian>()?,
+            reserved1:          source.read_u32::<BigEndian>()?,
+            fileID:             source.read_u32::<BigEndian>()?,
+            createDate:         source.read_u32::<BigEndian>()?,
+            contentModDate:     source.read_u32::<BigEndian>()?,
+            attributeModDate:   source.read_u32::<BigEndian>()?,
+            accessDate:         source.read_u32::<BigEndian>()?,
+            backupDate:         source.read_u32::<BigEndian>()?,
+            permissions:        HFSPlusBSDInfo::import(source)?,
+            userInfo:           FileInfo::import(source)?,
+            finderInfo:         ExtendedFileInfo::import(source)?,
+            textEncoding:       source.read_u32::<BigEndian>()?,
+            reserved2:          source.read_u32::<BigEndian>()?,
+         
+            dataFork:           HFSPlusForkData::import(source)?,
+            resourceFork:       HFSPlusForkData::import(source)?,
+        })
+    }
+}
+
 //struct HFSPlusCatalogThread {
 //    SInt16              recordType;
 //    SInt16              reserved;
@@ -590,6 +633,9 @@ impl Rect {
 //   together. */
 //typedef UInt32        FourCharCode;
 //typedef FourCharCode  OSType;
+
+pub type OSType = u32;
+
 //
 // /* Finder flags (finderFlags, fdFlags and frFlags) */
 //enum {
@@ -635,7 +681,28 @@ impl Rect {
 //  UInt16    reservedField;
 //};
 //typedef struct FileInfo   FileInfo;
-//
+
+#[derive(Debug)]
+pub struct FileInfo {
+    pub fileType:               OSType, /* The type of the file */
+    pub fileCreator:	        OSType, /* The file's creator */
+    pub finderFlags:	        u16,
+    pub location:               Point,  /* File's location in the folder. */
+    pub reservedField:	        u16,
+}
+
+impl FileInfo {
+    fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            fileType:	        source.read_u32::<BigEndian>()?,
+            fileCreator:	source.read_u32::<BigEndian>()?,
+            finderFlags:	source.read_u16::<BigEndian>()?,
+            location:	        Point::import(source)?,
+            reservedField:	source.read_u16::<BigEndian>()?,
+        })
+    }
+}
+
 //struct ExtendedFileInfo {
 //  SInt16    reserved1[4];
 //  UInt16    extendedFinderFlags;
