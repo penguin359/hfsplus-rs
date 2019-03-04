@@ -8,6 +8,8 @@ use std::cmp::Ordering;
 
 use std::fmt;
 
+use std::path::PathBuf;
+
 
 extern crate backtrace;
 use backtrace::Backtrace;
@@ -654,19 +656,30 @@ impl<R: Record> BTree<R> {
                 }
                 self.get_record_range_node(first, last, return_record.node_id as usize)
             },
-            Node::LeafNode(x) => {
+            Node::LeafNode(mut x) => {
                 println!("{:?}", x.descriptor);
                 let mut return_records = Vec::new();
                 println!("Foobar");
                 println!("First: {:?}", first);
                 println!("Last: {:?}", last);
-                for record in &x.records {
-                    if record.get_key() >= last {
-                        break;
-                    } else if record.get_key() >= first {
-                        println!("{:?}", record.get_key());
-                        return_records.push(Rc::clone(record));
+                loop {
+                    for record in &x.records {
+                        if record.get_key() >= last {
+                            break;
+                        } else if record.get_key() >= first {
+                            println!("{:?}", record.get_key());
+                            return_records.push(Rc::clone(record));
+                        }
                     }
+                    if x.records[x.records.len()-1].get_key() >= last ||
+                       x.descriptor.fLink == 0 {
+                        break;
+                    }
+                    let next_node = self.get_node(x.descriptor.fLink as usize)?;
+                    x = match next_node {
+                        Node::LeafNode(x) => x,
+                        _ => { return Err(HFSError::InvalidRecordType); }
+                    };
                 }
                 Ok(return_records)
             },
@@ -864,6 +877,50 @@ impl HFSVolume {
             CatalogBody::Folder(x) => self.get_children_id(x.folderID),
             _ => Err(HFSError::InvalidRecordKey)
         }
+    }
+
+    fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+        let path = PathBuf::from(filename);
+        let btree = self.catalog_btree.as_ref().unwrap().borrow();
+        let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+        let result = btree.get_record(&root_thread_key)?;
+        let thread = match result.body {
+            CatalogBody::FolderThread(ref x) => {
+                x
+            },
+            _ => {
+                return Err(HFSError::InvalidRecordType);
+            },
+        };
+        let result = btree.get_record(thread)?;
+        let parent = match result.body {
+            CatalogBody::Folder(ref x) => {
+                x
+            },
+            _ => {
+                return Err(HFSError::InvalidRecordType);
+            },
+        };
+        let mut parent_id = parent.folderID;
+        for i in &path {
+            let val = i.to_str().unwrap();
+            println!("{}", val);
+            if val == "/" {
+                continue;
+            }
+            let child_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString::from(val) };
+            let result = btree.get_record(&child_key)?;
+            let parent = match result.body {
+                CatalogBody::Folder(ref x) => {
+                    x
+                },
+                _ => {
+                    return Err(HFSError::InvalidRecordType);
+                },
+            };
+            parent_id = parent.folderID;
+        }
+        self.get_children_id(parent_id)
     }
 }
 
