@@ -107,6 +107,113 @@ fn blank_volume_header() -> HFSPlusVolumeHeader {
     }
 }
 
+/// Generate a bare-bones Volume Header suitable for basic testing
+/// Some fields will need to be modified for basic testing, but this
+/// should provide a decent starting point with minimal changes needed
+/// to set up a test bed.
+fn empty_v4_volume_header() -> HFSPlusVolumeHeader {
+    HFSPlusVolumeHeader {
+        signature: HFSP_SIGNATURE,
+        version: 4,
+        attributes: VolumeAttributes::kHFSVolumeUnmountedBit,
+        lastMountedVersion: 0,
+        journalInfoBlock: 0,
+        createDate: 0,
+        modifyDate: 0,
+        backupDate: 0,
+        checkedDate: 0,
+        fileCount: 0,
+        folderCount: 0,
+        blockSize: 4096,
+        totalBlocks: 0,
+        freeBlocks: 0,
+        nextAllocation: 0,
+        rsrcClumpSize: 65536,
+        dataClumpSize: 65536,
+        nextCatalogID: 16,
+        writeCount: 0,
+        encodingsBitmap: 1,
+        finderInfo: [
+             0, 0, 0, 0, 0, 0, 0, 0
+        ],
+        allocationFile: HFSPlusForkData {
+            logicalSize: 0,
+            clumpSize: 4096,
+            totalBlocks: 0,
+            extents: [
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            ],
+        },
+        extentsFile: HFSPlusForkData {
+            logicalSize: 0,
+            clumpSize: 32768,
+            totalBlocks: 0,
+            extents: [
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            ],
+        },
+        catalogFile: HFSPlusForkData {
+            logicalSize: 0,
+            clumpSize: 32768,
+            totalBlocks: 0,
+            extents: [
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            ],
+        },
+        attributesFile: HFSPlusForkData {
+            logicalSize: 0,
+            clumpSize: 65536,
+            totalBlocks: 0,
+            extents: [
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            ],
+        },
+        startupFile: HFSPlusForkData {
+            logicalSize: 0,
+            clumpSize: 0,
+            totalBlocks: 0,
+            extents: [
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+                HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            ],
+        },
+    }
+}
+
 #[test]
 fn load_blank_volume_header() {
     let expected = blank_volume_header();
