@@ -34,6 +34,12 @@ impl fmt::Debug for HFSString {
     }
 }
 
+impl fmt::Display for HFSString {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", String::from_utf16(self.0.as_slice()).unwrap())
+    }
+}
+
 impl From<String> for HFSString {
     fn from(str: String) -> Self {
         HFSString(
@@ -843,17 +849,13 @@ impl HFSVolume {
         match r {
             Ok(x) => {
                 Ok(x.into_iter().filter(|item| {println!("{:?}", item.get_key()); match item.body {
+                    CatalogBody::Folder(_) => true,
                     CatalogBody::File(_) => true,
                     _ => false,
                 }}).collect())
             },
             Err(x) => Err(x),
         }
-        //    Ok(x) => Ok(x.iter().filter(|item| match item {
-        //    _ => true
-        //}).collect()),
-        //    Err(x) => Err(x)
-        //}
     }
 
     fn get_children(&self, key: &CatalogKey) -> HFSResult<Vec<Rc<CatalogRecord>>> {

@@ -582,12 +582,18 @@ fn load_small_root_folder_listing() {
     assert!(children_res.is_ok(), "Failed to search for children");
     let children = children_res.unwrap();
     assert_ne!(children.len(), 0);
-    //let names = children.filter_map(|item| match item {
-    //    CatalogBody::Folder(_) => {
-    //        item.key.node_name.to_string()
-    //    },
-    //    _ => None
-    //});
+    let names = children.iter().filter_map(|item| match item.body {
+        CatalogBody::Folder(_) => {
+            Some(item.get_key().node_name.to_string())
+        },
+        CatalogBody::File(_) => {
+            Some(item.get_key().node_name.to_string())
+        },
+        _ => None
+    }).collect::<Vec<String>>();
+    assert!(names.contains(&"hello.txt".to_string()));
+    assert!(names.contains(&"files".to_string()));
+    assert!(names.contains(&"\0\0\0\0HFS+ Private Data".to_string()));
 }
 
 #[test]
