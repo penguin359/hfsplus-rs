@@ -796,8 +796,8 @@ struct HFSVolume<F: Read + Seek> {
     extents_btree: Option<BTreeRc<F, CatalogRecord>>,
 }
 
-impl HFSVolume<File> {
-    fn load(mut file: File) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
+impl<F: Read + Seek> HFSVolume<F> {
+    fn load(mut file: F) -> std::io::Result<Rc<RefCell<HFSVolume<F>>>> {
         file.seek(std::io::SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let _hfsx_volume = match header.signature {
@@ -844,11 +844,6 @@ impl HFSVolume<File> {
         volume.borrow_mut().catalog_btree = Some(Rc::new(RefCell::new(BTree::open(catalog_fork)?)));
         volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork)?)));
         Ok(volume)
-    }
-
-    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
-        let file = File::open(filename)?;
-        HFSVolume::load(file)
     }
 
     fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
@@ -924,6 +919,13 @@ impl HFSVolume<File> {
             parent_id = parent.folderID;
         }
         self.get_children_id(parent_id)
+    }
+}
+
+impl HFSVolume<File> {
+    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
+        let file = File::open(filename)?;
+        HFSVolume::load(file)
     }
 }
 
