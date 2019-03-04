@@ -565,15 +565,15 @@ impl<R: Record> Node<R> {
 }
 
 
-struct BTree<R> {
-    fork: Rc<RefCell<Fork>>,
+struct BTree<F: Read + Seek, R> {
+    fork: Rc<RefCell<Fork<F>>>,
     node_size: u16,
     header: HeaderNode,
     _top_node: Option<R>,
 }
 
-impl<R: Record> BTree<R> {
-    fn open(fork_rc: ForkRc) -> Result<BTree<R>, HFSError> {
+impl<F: Read + Seek, R: Record> BTree<F, R> {
+    fn open(fork_rc: ForkRc<F>) -> Result<BTree<F, R>, HFSError> {
         let node_size;
         let header;
         {
@@ -732,7 +732,7 @@ impl<R: Record> BTree<R> {
     }
 }
 
-type BTreeRc<R> = Rc<RefCell<BTree<R>>>;
+type BTreeRc<F, R> = Rc<RefCell<BTree<F, R>>>;
 
 
 mod internal;
@@ -740,15 +740,18 @@ use internal::*;
 
 
 
-struct Fork {
-    file: Rc<RefCell<File>>,
-    volume: Rc<RefCell<HFSVolume>>,
+//trait ReadSeek: Read + Seek {}
+//impl<T: Read+Seek> ReadSeek for T {}
+
+struct Fork<F: Read + Seek> {
+    file: Rc<RefCell<F>>,
+    volume: Rc<RefCell<HFSVolume<F>>>,
     logical_size: u64,
     extents: Vec<(u32, u32)>,
 }
 
-impl Fork {
-    fn load(file: Rc<RefCell<File>>, volume: Rc<RefCell<HFSVolume>>, data: &HFSPlusForkData) -> std::io::Result<Fork> {
+impl<F: Read + Seek> Fork<F> {
+    fn load(file: Rc<RefCell<F>>, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
         //Err(Error::new(ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
         for extent in &data.extents {
@@ -781,20 +784,20 @@ impl Fork {
     }
 }
 
-type ForkRc = Rc<RefCell<Fork>>;
+type ForkRc<F> = Rc<RefCell<Fork<F>>>;
 
-struct HFSVolume {
-    file: Rc<RefCell<File>>,
+struct HFSVolume<F: Read + Seek> {
+    file: Rc<RefCell<F>>,
     header: HFSPlusVolumeHeader,
-    catalog_fork: Weak<RefCell<Fork>>,
-    extents_fork: Weak<RefCell<Fork>>,
-    forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork>>>,
-    catalog_btree: Option<BTreeRc<CatalogRecord>>,
-    extents_btree: Option<BTreeRc<CatalogRecord>>,
+    catalog_fork: Weak<RefCell<Fork<F>>>,
+    extents_fork: Weak<RefCell<Fork<F>>>,
+    forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
+    catalog_btree: Option<BTreeRc<F, CatalogRecord>>,
+    extents_btree: Option<BTreeRc<F, CatalogRecord>>,
 }
 
-impl HFSVolume {
-    fn load(mut file: File) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
+impl HFSVolume<File> {
+    fn load(mut file: File) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
         file.seek(std::io::SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let _hfsx_volume = match header.signature {
@@ -843,7 +846,7 @@ impl HFSVolume {
         Ok(volume)
     }
 
-    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume>>> {
+    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
     }
