@@ -28,7 +28,7 @@ use hfs_strings::fast_unicode_compare;
 
 
 
-struct HFSString(Vec<u16>);
+pub struct HFSString(Vec<u16>);
 
 impl fmt::Debug for HFSString {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -140,7 +140,7 @@ impl Eq for HFSString {
 
 
 #[derive(Debug)]
-struct CatalogKey {
+pub struct CatalogKey {
     _case_match: bool,
     parent_id: HFSCatalogNodeID,
     node_name: HFSString,
@@ -197,13 +197,13 @@ impl Eq for CatalogKey {
 impl Key for CatalogKey {
 }
 
-trait Record {
+pub trait Record {
     fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self>
         where Self: Sized;
     fn get_key(&self) -> &CatalogKey;
 }
 
-struct IndexRecord {
+pub struct IndexRecord {
     key: CatalogKey,
     node_id: u32,
 }
@@ -226,7 +226,7 @@ enum CatalogBody {
     FileThread(CatalogKey),
 }
 
-struct CatalogRecord {
+pub struct CatalogRecord {
     key: CatalogKey,
     body: CatalogBody,
 }
@@ -328,9 +328,9 @@ impl Record for CatalogRecord {
 
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq, Eq)]
-struct BTNodeDescriptor {
-    fLink: u32,
-    bLink: u32,
+pub struct BTNodeDescriptor {
+    pub fLink: u32,
+    pub bLink: u32,
     kind: i8,
     height: u8,
     numRecords: u16,
@@ -372,13 +372,13 @@ impl BTNodeDescriptor {
 
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq, Eq)]
-struct BTHeaderRec {
-    treeDepth: u16,
-    rootNode: u32,
-    leafRecords: u32,
-    firstLeafNode: u32,
-    lastLeafNode: u32,
-    nodeSize: u16,
+pub struct BTHeaderRec {
+    pub treeDepth: u16,
+    pub rootNode: u32,
+    pub leafRecords: u32,
+    pub firstLeafNode: u32,
+    pub lastLeafNode: u32,
+    pub nodeSize: u16,
     maxKeyLength: u16,
     totalNodes: u32,
     freeNodes: u32,
@@ -431,7 +431,7 @@ impl BTHeaderRec {
 
 
 #[derive(Debug)]
-enum HFSError {
+pub enum HFSError {
     InvalidData(String),
     IOError(Error),
     BadNode,
@@ -457,31 +457,31 @@ impl From<HFSError> for Error {
 type HFSResult<T> = Result<T, HFSError>;
 
 
-trait Key : Ord + PartialOrd + Eq + PartialEq {
+pub trait Key : Ord + PartialOrd + Eq + PartialEq {
 }
 
-struct HeaderNode {
-    descriptor: BTNodeDescriptor,
-    header: BTHeaderRec,
+pub struct HeaderNode {
+    pub descriptor: BTNodeDescriptor,
+    pub header: BTHeaderRec,
     _user_data: Vec<u8>,
     _map: Vec<u8>,
 }
 
-struct MapNode {
+pub struct MapNode {
     _descriptor: BTNodeDescriptor,
 }
 
-struct IndexNode {
+pub struct IndexNode {
     descriptor: BTNodeDescriptor,
     records: Vec<IndexRecord>,
 }
 
-struct LeafNode<R: Record> {
-    descriptor: BTNodeDescriptor,
+pub struct LeafNode<R: Record> {
+    pub descriptor: BTNodeDescriptor,
     records: Vec<Rc<R>>,
 }
 
-enum Node<R: Record> {
+pub enum Node<R: Record> {
     HeaderNode(HeaderNode),
     MapNode(MapNode),
     IndexNode(IndexNode),
@@ -565,10 +565,10 @@ impl<R: Record> Node<R> {
 }
 
 
-struct BTree<F: Read + Seek, R> {
+pub struct BTree<F: Read + Seek, R> {
     fork: Rc<RefCell<Fork<F>>>,
     node_size: u16,
-    header: HeaderNode,
+    pub header: HeaderNode,
     _top_node: Option<R>,
 }
 
@@ -620,7 +620,7 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
         })
     }
 
-    fn get_node(&self, node_num: usize) -> HFSResult<Node<R>> {
+    pub fn get_node(&self, node_num: usize) -> HFSResult<Node<R>> {
         {
         let fork = self.fork.borrow_mut();
         let mut buffer = vec![0; self.node_size as usize];
@@ -743,7 +743,7 @@ use internal::*;
 //trait ReadSeek: Read + Seek {}
 //impl<T: Read+Seek> ReadSeek for T {}
 
-struct Fork<F: Read + Seek> {
+pub struct Fork<F: Read + Seek> {
     file: Rc<RefCell<F>>,
     volume: Rc<RefCell<HFSVolume<F>>>,
     logical_size: u64,
@@ -850,18 +850,18 @@ impl<F: Read + Seek> Fork<F> {
 
 type ForkRc<F> = Rc<RefCell<Fork<F>>>;
 
-struct HFSVolume<F: Read + Seek> {
+pub struct HFSVolume<F: Read + Seek> {
     file: Rc<RefCell<F>>,
     header: HFSPlusVolumeHeader,
     catalog_fork: Weak<RefCell<Fork<F>>>,
     extents_fork: Weak<RefCell<Fork<F>>>,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
-    catalog_btree: Option<BTreeRc<F, CatalogRecord>>,
+    pub catalog_btree: Option<BTreeRc<F, CatalogRecord>>,
     extents_btree: Option<BTreeRc<F, CatalogRecord>>,
 }
 
 impl<F: Read + Seek> HFSVolume<F> {
-    fn load(mut file: F) -> std::io::Result<Rc<RefCell<HFSVolume<F>>>> {
+    pub fn load(mut file: F) -> std::io::Result<Rc<RefCell<HFSVolume<F>>>> {
         file.seek(std::io::SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let _hfsx_volume = match header.signature {
@@ -987,149 +987,12 @@ impl<F: Read + Seek> HFSVolume<F> {
 }
 
 impl HFSVolume<File> {
-    fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
+    pub fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
     }
 }
 
-
-fn _main() -> std::io::Result<()> {
-    let mut file = File::open("src/image")?;
-    file.seek(std::io::SeekFrom::Start(1024))?;
-    let header = HFSPlusVolumeHeader::import(&mut file)?;
-    println!("Volume: {:?}", header);
-    let hfsx_volume = match header.signature {
-        HFSP_SIGNATURE => {
-            println!("HFS+ Volume");
-            false
-        },
-        HFSX_SIGNATURE => {
-            println!("HFSX Volume");
-            true
-        },
-        _ => {
-            println!("Unknown Volume");
-            return Ok(());
-        },
-    };
-    if !hfsx_volume {
-        if header.version != HFSP_VERSION {
-            println!("Unsupported version for HFS+ Volume");
-            return Ok(());
-        }
-    } else {
-        if header.version != HFSX_VERSION {
-            println!("Unsupported version for HFSX Volume");
-            return Ok(());
-        }
-    }
-    println!("Start: {}", header.catalogFile.extents[0].startBlock as u64);
-    file.seek(std::io::SeekFrom::Start(header.catalogFile.extents[0].startBlock as u64))?;
-    //let mut header_node = Vec::with_capacity(512);
-    let mut header_node = vec![0; 512];
-    //let mut header_node = [0; 512];
-    println!("{} -> {:?}", header_node.len(), "f");
-    file.read_exact(&mut header_node)?;  // Minimum size for any node, needed to get nodeSize field
-    println!("{} -> {:?}", header_node.len(), header_node);
-    println!("{} -> {:?}", header_node.len(), "f");
-    let node_size = (&header_node[32..34]).read_u16::<BigEndian>()?;
-    println!("{}", node_size);
-    let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
-    let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
-    println!("{} -> {}", btree.header.header.firstLeafNode, btree.header.header.lastLeafNode);
-    let mut node_num = btree.header.header.firstLeafNode;
-    while node_num != 0 {
-        println!("Dump node {}:", node_num);
-        let node = btree.get_node(node_num as usize)?;
-        match node {
-            Node::LeafNode(LeafNode { descriptor: d, .. }) => {
-                println!("Next: {}", d.fLink);
-                node_num = d.fLink;
-            },
-            _ => {
-            },
-        }
-    }
-
-    Ok(())
-}
-
-
-extern crate libc;
-extern crate time;
-
-extern crate fuse;
-
-//use std::io::{UserFile, UserDir};
-//use std::path::PathBuf;
-//use std::mem;
-use libc::{ENOENT, ENOSYS};
-use time::Timespec;
-use std::env;
-use std::path::Path;
-//use fuse::{FileAttr, FileType, Filesystem, Request, ReplyAttr, ReplyData, ReplyEntry, ReplyDirectory};
-use fuse::{FileAttr, FileType, Filesystem, Request, ReplyAttr, ReplyDirectory};
-
-struct JsonFilesystem;
-
-impl Filesystem for JsonFilesystem {
-    fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
-        println!("getattr(ino={})", ino);
-        let ts = Timespec::new(0, 0);
-        let attr = FileAttr {
-            ino: 1,
-            size: 0,
-            blocks: 0,
-            atime: ts,
-            mtime: ts,
-            ctime: ts,
-            crtime: ts,
-            kind: FileType::Directory,
-            perm: 0o755,
-            nlink: 0,
-            uid: 0,
-            gid: 0,
-            rdev: 0,
-            flags: 0,
-        };
-        let ttl = Timespec::new(1, 0);
-        if ino == 1 {
-            reply.attr(&ttl, &attr);
-        } else {
-            reply.error(ENOSYS);
-        }
-    }
-
-    fn readdir(&mut self, _req: &Request, ino: u64, fh: u64, offset: i64, mut reply: ReplyDirectory) {
-        println!("readdir(ino={}, fh={}, offset={})", ino, fh, offset);
-        if ino == 1 {
-            if offset == 0 {
-                reply.add(1, 0, FileType::Directory, &Path::new("."));
-                reply.add(1, 1, FileType::Directory, &Path::new(".."));
-            }
-            reply.ok();
-        } else {
-            reply.error(ENOENT);
-        }
-    }
-}
-
-fn main() -> std::io::Result<()> {
-    _main()?;
-    let mountpoint = match env::args().nth(1) {
-        Some(path) => path,
-        None => {
-            println!("Usage: {} <MOUNTPOINT>", env::args().nth(0).unwrap());
-            return Ok(());
-        }
-    };
-
-    fuse::mount(JsonFilesystem, &mountpoint, &[])?;
-
-    Ok(())
-}
 
 mod hfs_strings;
 
