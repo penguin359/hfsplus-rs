@@ -751,7 +751,7 @@ pub struct Fork<F: Read + Seek> {
 }
 
 impl<F: Read + Seek> Fork<F> {
-    fn load(file: Rc<RefCell<F>>, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
+    pub fn load(file: Rc<RefCell<F>>, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
         let block_size = volume.borrow().header.blockSize as u64;
         //Err(Error::new(ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
@@ -843,6 +843,12 @@ impl<F: Read + Seek> Fork<F> {
         }
     }
 
+    pub fn read_all(&self) -> std::io::Result<Vec<u8>> {
+        let mut buffer = vec![0; self.logical_size as usize];
+        self.read(0, buffer.as_mut_slice())?;
+        Ok(buffer)
+    }
+
     fn len(&self) -> u64 {
         self.logical_size
     }
@@ -851,7 +857,7 @@ impl<F: Read + Seek> Fork<F> {
 type ForkRc<F> = Rc<RefCell<Fork<F>>>;
 
 pub struct HFSVolume<F: Read + Seek> {
-    file: Rc<RefCell<F>>,
+    pub file: Rc<RefCell<F>>,
     header: HFSPlusVolumeHeader,
     catalog_fork: Weak<RefCell<Fork<F>>>,
     extents_fork: Weak<RefCell<Fork<F>>>,
@@ -910,7 +916,7 @@ impl<F: Read + Seek> HFSVolume<F> {
         Ok(volume)
     }
 
-    fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+    pub fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
         let btree = self.catalog_btree.as_ref().unwrap().borrow();
         let first = CatalogKey { _case_match: false, parent_id: node_id, node_name: HFSString::from("") };
         let last = CatalogKey { _case_match: false, parent_id: node_id+1, node_name: HFSString::from("") };
@@ -939,6 +945,53 @@ impl<F: Read + Seek> HFSVolume<F> {
             CatalogBody::Folder(x) => self.get_children_id(x.folderID),
             _ => Err(HFSError::InvalidRecordKey)
         }
+    }
+
+    pub fn get_path_record(&self, filename: &str) -> HFSResult<CatalogBody> {
+        let path = PathBuf::from(filename);
+        let btree = self.catalog_btree.as_ref().unwrap().borrow();
+        let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+        let result = btree.get_record(&root_thread_key)?;
+        let thread = match result.body {
+            CatalogBody::FolderThread(ref x) => {
+                x
+            },
+            _ => {
+                return Err(HFSError::InvalidRecordType);
+            },
+        };
+        let result = btree.get_record(thread)?;
+        let mut parent = match result.body {
+            CatalogBody::Folder(x) => {
+                x
+            },
+            _ => {
+                return Err(HFSError::InvalidRecordType);
+            },
+        };
+        let mut parent_id = parent.folderID;
+        for i in &path {
+            let val = i.to_str().unwrap();
+            println!("{}", val);
+            if val == "/" {
+                continue;
+            }
+            let parent_id = parent.folderID;
+            let child_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString::from(val) };
+            let result = btree.get_record(&child_key)?;
+            parent = match result.body {
+                CatalogBody::Folder(x) => {
+                    x
+                },
+                CatalogBody::File(x) => {
+                    return Ok(CatalogBody::File(x));
+                },
+                _ => {
+                    return Err(HFSError::InvalidRecordType);
+                },
+            };
+        }
+        Ok(CatalogBody::Folder(parent))
     }
 
     pub fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {

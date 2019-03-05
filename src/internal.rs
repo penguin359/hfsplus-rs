@@ -63,7 +63,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 //#define S_IFSOCK 0140000    /* socket */
 //#define S_IFWHT  0160000    /* whiteout */
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct HFSPlusBSDInfo {
     pub ownerID:	        u32,
     pub groupID:	        u32,
@@ -133,7 +133,7 @@ pub const S_IFWHT:  u16 = 0o0160000;   /* whiteout */
 //};
 //typedef struct HFSPlusExtentDescriptor HFSPlusExtentDescriptor;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HFSPlusForkData {
     pub logicalSize: u64,
     pub clumpSize: u32,
@@ -143,7 +143,7 @@ pub struct HFSPlusForkData {
 
 pub type HFSPlusExtentRecord = [HFSPlusExtentDescriptor; 8];
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HFSPlusExtentDescriptor {
     pub startBlock: u32,
     pub blockCount: u32,
@@ -483,7 +483,7 @@ pub const kHFSPlusFileThreadRecord    : i16 = 0x0004;
 //};
 //typedef struct HFSPlusCatalogFolder HFSPlusCatalogFolder;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct HFSPlusCatalogFolder {
     //pub recordType:	        i16,
     pub flags:	                u16,
@@ -552,6 +552,7 @@ impl HFSPlusCatalogFolder {
 //    kHFSThreadExistsMask    = 0x0002
 //};
 
+#[derive(Debug, Copy, Clone)]
 pub struct HFSPlusCatalogFile {
     //pub recordType:	        i16,
     pub flags:	                u16,
@@ -615,7 +616,7 @@ impl HFSPlusCatalogFile {
 //};
 //typedef struct Point  Point;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Point {
     pub v:	                i16,
     pub h:	                i16,
@@ -639,7 +640,7 @@ impl Point {
 //};
 //typedef struct Rect   Rect;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Rect {
     pub top:	                i16,
     pub left:	                i16,
@@ -711,7 +712,7 @@ pub type OSType = u32;
 //};
 //typedef struct FileInfo   FileInfo;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct FileInfo {
     pub fileType:               OSType, /* The type of the file */
     pub fileCreator:	        OSType, /* The file's creator */
@@ -740,6 +741,7 @@ impl FileInfo {
 //};
 //typedef struct ExtendedFileInfo   ExtendedFileInfo;
 
+#[derive(Debug, Copy, Clone)]
 pub struct ExtendedFileInfo {
     pub reserved1:        	[i16; 4],
     pub extendedFinderFlags:	u16,
@@ -774,7 +776,7 @@ impl ExtendedFileInfo {
 //};
 //typedef struct FolderInfo   FolderInfo;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct FolderInfo {
     pub windowBounds:	        Rect,   /* The position and dimension of the */
                                         /* folder's window */
@@ -805,7 +807,7 @@ impl FolderInfo {
 //};
 //typedef struct ExtendedFolderInfo   ExtendedFolderInfo;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ExtendedFolderInfo {
     pub scrollPosition:	        Point,  /* Scroll position (for icon views) */
     pub reserved1:              i32,

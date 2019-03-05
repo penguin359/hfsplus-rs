@@ -1,6 +1,7 @@
 extern crate unicode_normalization;
 use unicode_normalization::UnicodeNormalization;
 
+use std::rc::Rc;
 use std::fs::File;
 
 use hfsplus::*;
@@ -29,7 +30,10 @@ fn main() -> std::io::Result<()> {
     }
     if let Some(p) = path {
         println!("Open path: {}", p);
-        let children = vol2.get_path(&p)?;
+        let record = vol2.get_path_record(&p)?;
+        match record {
+            CatalogBody::Folder(body) => {
+                let children = vol2.get_children_id(body.folderID)?;
         for c in &children {
             let perms = match c.body {
                 CatalogBody::Folder(ref x) => Some((&x.permissions, 4096)),
@@ -68,7 +72,19 @@ fn main() -> std::io::Result<()> {
             }
             //println!("");
         }
-    }
+            },
+            CatalogBody::File(body) => {
+                println!("Found a file!");
+                let data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
+                let data = data_fork.read_all().unwrap();
+                let contents = std::str::from_utf8(data.as_ref()).unwrap();
+                println!("Contents: {}", contents);
+            },
+            _ => {
+                panic!("Invalid Return Value");
+            },
+        };
+    };
 
     Ok(())
 }
