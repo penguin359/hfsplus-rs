@@ -424,6 +424,71 @@ fn load_fragmented_fork_data() {
 }
 
 #[test]
+fn load_beyond_end_of_fork_extents() {
+    let mut header = empty_v4_volume_header();
+    let mut raw_data = create_dead_beef(1024);
+    header.blockSize = 4;   // Really small block size to ease testing
+    header.catalogFile.logicalSize = 33;
+    header.catalogFile.totalBlocks = 9;
+    header.catalogFile.extents[0].startBlock = 10;
+    header.catalogFile.extents[0].blockCount = 3;
+    header.catalogFile.extents[1].startBlock = 7;
+    header.catalogFile.extents[1].blockCount = 1;
+    header.catalogFile.extents[2].startBlock = 14;
+    header.catalogFile.extents[2].blockCount = 2;
+    header.catalogFile.extents[3].startBlock = 17;
+    header.catalogFile.extents[3].blockCount = 2;
+    header.catalogFile.extents[4].startBlock = 4;
+    header.catalogFile.extents[4].blockCount = 1;
+    let volume = Rc::new(RefCell::new(HFSVolume {
+        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        header,
+        catalog_fork: Weak::new(),
+        extents_fork: Weak::new(),
+        forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
+    }));
+    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut buffer = [0u8; 37];  // Note, this is one more byte than in fork extents
+    let result = fork.read(0, buffer.as_mut());
+    assert!(result.is_err(), "Failed to trigger error in read()");
+}
+
+#[test]
+fn load_beyond_end_of_fork_data() {
+    let mut header = empty_v4_volume_header();
+    let mut raw_data = create_dead_beef(1024);
+    header.blockSize = 4;   // Really small block size to ease testing
+    header.catalogFile.logicalSize = 33;
+    header.catalogFile.totalBlocks = 9;
+    header.catalogFile.extents[0].startBlock = 10;
+    header.catalogFile.extents[0].blockCount = 3;
+    header.catalogFile.extents[1].startBlock = 7;
+    header.catalogFile.extents[1].blockCount = 1;
+    header.catalogFile.extents[2].startBlock = 14;
+    header.catalogFile.extents[2].blockCount = 2;
+    header.catalogFile.extents[3].startBlock = 17;
+    header.catalogFile.extents[3].blockCount = 2;
+    header.catalogFile.extents[4].startBlock = 4;
+    header.catalogFile.extents[4].blockCount = 1;
+    let volume = Rc::new(RefCell::new(HFSVolume {
+        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        header,
+        catalog_fork: Weak::new(),
+        extents_fork: Weak::new(),
+        forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
+    }));
+    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut buffer = [0u8; 34];  // Note, this is one more byte than in fork data
+                                 // but still resides inside fork extent
+    let result = fork.read(0, buffer.as_mut());
+    assert!(result.is_err(), "Failed to trigger error in read()");
+}
+
+#[test]
 fn load_blank_volume_catalog_fork() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     assert!(volume.borrow().catalog_fork.upgrade().is_some(), "Invalid catalog fork pointer");
@@ -959,7 +1024,6 @@ fn test_btree_get_record_range_small() {
     assert!(records[records.len()-1].get_key() < &last, "First key after end of range (exclusive)");
 }
 
-#[ignore]
 #[test]
 fn test_btree_get_record_range_many() {
     let volume = HFSVolume::load_file("hfsp-many2.img").expect("Failed to read Volume Header");

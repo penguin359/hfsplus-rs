@@ -759,8 +759,11 @@ impl<F: Read + Seek> Fork<F> {
         println!("Block Size: {}", block_size);
         for extent in &data.extents {
             let extent_size = extent.blockCount as u64 * block_size;
-            println!("{} = {} = {} = {}", extent.startBlock, extent.blockCount, extent_position, extent_size);
-            extents.push((extent.startBlock, extent.blockCount, extent_position, extent_size));
+            let extent_end = extent_position + extent_size;
+            extent_position = std::cmp::min(data.logicalSize, extent_position);
+            let extent_end = std::cmp::min(data.logicalSize, extent_end);
+            println!("{} = {} = {} = {}", extent.startBlock, extent.blockCount, extent_position, extent_end);
+            extents.push((extent.startBlock, extent.blockCount, extent_position, extent_end));
             extent_position += extent_size;
         }
         Ok(Fork { file, volume, logical_size: data.logicalSize, extents })
@@ -787,9 +790,9 @@ impl<F: Read + Seek> Fork<F> {
         let mut bytes_read = 0;
         for extent in &self.extents {
             println!("{:?}", extent);
-            let (start_block, _, extent_begin, extent_length) = *extent;
-            println!("{} - {} - {}", start_block, extent_begin, extent_length);
-            let extent_end = extent_begin + extent_length;
+            let (start_block, _, extent_begin, extent_end) = *extent;
+            println!("{} - {} - {}", start_block, extent_begin, extent_end);
+            let extent_length = extent_end - extent_begin;
             if offset >= extent_end {
                 continue;
             }
