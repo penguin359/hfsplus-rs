@@ -86,34 +86,34 @@ impl HFSPlusBSDInfo {
     }
 }
 
-const S_ISUID:  u16 = 0o0004000;   /* set user id on execution */
-const S_ISGID:  u16 = 0o0002000;   /* set group id on execution */
-const S_ISTXT:  u16 = 0o0001000;   /* sticky bit */
+pub const S_ISUID:  u16 = 0o0004000;   /* set user id on execution */
+pub const S_ISGID:  u16 = 0o0002000;   /* set group id on execution */
+pub const S_ISTXT:  u16 = 0o0001000;   /* sticky bit */
 
-const S_IRWXU:  u16 = 0o0000700;   /* RWX mask for owner */
-const S_IRUSR:  u16 = 0o0000400;   /* R for owner */
-const S_IWUSR:  u16 = 0o0000200;   /* W for owner */
-const S_IXUSR:  u16 = 0o0000100;   /* X for owner */
+pub const S_IRWXU:  u16 = 0o0000700;   /* RWX mask for owner */
+pub const S_IRUSR:  u16 = 0o0000400;   /* R for owner */
+pub const S_IWUSR:  u16 = 0o0000200;   /* W for owner */
+pub const S_IXUSR:  u16 = 0o0000100;   /* X for owner */
 
-const S_IRWXG:  u16 = 0o0000070;   /* RWX mask for group */
-const S_IRGRP:  u16 = 0o0000040;   /* R for group */
-const S_IWGRP:  u16 = 0o0000020;   /* W for group */
-const S_IXGRP:  u16 = 0o0000010;   /* X for group */
+pub const S_IRWXG:  u16 = 0o0000070;   /* RWX mask for group */
+pub const S_IRGRP:  u16 = 0o0000040;   /* R for group */
+pub const S_IWGRP:  u16 = 0o0000020;   /* W for group */
+pub const S_IXGRP:  u16 = 0o0000010;   /* X for group */
 
-const S_IRWXO:  u16 = 0o0000007;   /* RWX mask for other */
-const S_IROTH:  u16 = 0o0000004;   /* R for other */
-const S_IWOTH:  u16 = 0o0000002;   /* W for other */
-const S_IXOTH:  u16 = 0o0000001;   /* X for other */
+pub const S_IRWXO:  u16 = 0o0000007;   /* RWX mask for other */
+pub const S_IROTH:  u16 = 0o0000004;   /* R for other */
+pub const S_IWOTH:  u16 = 0o0000002;   /* W for other */
+pub const S_IXOTH:  u16 = 0o0000001;   /* X for other */
 
-const S_IFMT:   u16 = 0o0170000;   /* type of file mask */
-const S_IFIFO:  u16 = 0o0010000;   /* named pipe (fifo) */
-const S_IFCHR:  u16 = 0o0020000;   /* character special */
-const S_IFDIR:  u16 = 0o0040000;   /* directory */
-const S_IFBLK:  u16 = 0o0060000;   /* block special */
-const S_IFREG:  u16 = 0o0100000;   /* regular */
-const S_IFLNK:  u16 = 0o0120000;   /* symbolic link */
-const S_IFSOCK: u16 = 0o0140000;   /* socket */
-const S_IFWHT:  u16 = 0o0160000;   /* whiteout */
+pub const S_IFMT:   u16 = 0o0170000;   /* type of file mask */
+pub const S_IFIFO:  u16 = 0o0010000;   /* named pipe (fifo) */
+pub const S_IFCHR:  u16 = 0o0020000;   /* character special */
+pub const S_IFDIR:  u16 = 0o0040000;   /* directory */
+pub const S_IFBLK:  u16 = 0o0060000;   /* block special */
+pub const S_IFREG:  u16 = 0o0100000;   /* regular */
+pub const S_IFLNK:  u16 = 0o0120000;   /* symbolic link */
+pub const S_IFSOCK: u16 = 0o0140000;   /* socket */
+pub const S_IFWHT:  u16 = 0o0160000;   /* whiteout */
 
 
 // Fork Data Structure

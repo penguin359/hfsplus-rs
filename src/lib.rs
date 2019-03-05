@@ -736,7 +736,7 @@ type BTreeRc<F, R> = Rc<RefCell<BTree<F, R>>>;
 
 
 mod internal;
-use internal::*;
+pub use internal::*;
 
 
 
