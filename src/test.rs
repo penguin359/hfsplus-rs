@@ -214,6 +214,23 @@ fn empty_v4_volume_header() -> HFSPlusVolumeHeader {
     }
 }
 
+fn create_dead_beef(count: usize) -> Vec<u8> {
+    [0xDEu8, 0xAD, 0xBE, 0xEF].into_iter().cloned().cycle().take(count).collect()
+    //std::iter::repeat([0xDEu8, 0xAD, 0xBE, 0xEF].iter()).take(count).collect()
+    //let mut raw_data = Vec::with_capacity(count);
+    //for idx in 0..count {
+    //    let val = match idx % 4 {
+    //        0 => 0xde,
+    //        1 => 0xad,
+    //        2 => 0xbe,
+    //        3 => 0xef,
+    //        _ => { panic!("Modulus failure"); }
+    //    };
+    //    raw_data.push(val);
+    //}
+    //raw_data
+}
+
 #[test]
 fn load_blank_volume_header() {
     let expected = blank_volume_header();
@@ -306,6 +323,104 @@ fn test_good_fork_data() {
     }));
     let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_ok(), "Errors found in fork data");
+}
+
+#[test]
+fn load_fragmented_fork_data() {
+    let mut header = empty_v4_volume_header();
+    let mut raw_data = create_dead_beef(1024);
+    header.blockSize = 4;   // Really small block size to ease testing
+    header.catalogFile.logicalSize = 33;
+    header.catalogFile.totalBlocks = 9;
+    header.catalogFile.extents[0].startBlock = 10;
+    header.catalogFile.extents[0].blockCount = 3;
+    header.catalogFile.extents[1].startBlock = 7;
+    header.catalogFile.extents[1].blockCount = 1;
+    header.catalogFile.extents[2].startBlock = 14;
+    header.catalogFile.extents[2].blockCount = 2;
+    header.catalogFile.extents[3].startBlock = 17;
+    header.catalogFile.extents[3].blockCount = 2;
+    header.catalogFile.extents[4].startBlock = 4;
+    header.catalogFile.extents[4].blockCount = 1;
+    raw_data[4*10+0] = 'H' as u8;
+    raw_data[4*10+1] = 'e' as u8;
+    raw_data[4*10+2] = 'l' as u8;
+    raw_data[4*10+3] = 'l' as u8;
+    raw_data[4*11+0] = 'o' as u8;
+    raw_data[4*11+1] = ',' as u8;
+    raw_data[4*11+2] = ' ' as u8;
+    raw_data[4*11+3] = 'W' as u8;
+    raw_data[4*12+0] = 'o' as u8;
+    raw_data[4*12+1] = 'r' as u8;
+    raw_data[4*12+2] = 'l' as u8;
+    raw_data[4*12+3] = 'd' as u8;
+    raw_data[4*07+0] = '!' as u8;
+    raw_data[4*07+1] = '\n' as u8;
+    raw_data[4*07+2] = 'W' as u8;
+    raw_data[4*07+3] = 'h' as u8;
+    raw_data[4*14+0] = 'a' as u8;
+    raw_data[4*14+1] = 't' as u8;
+    raw_data[4*14+2] = ' ' as u8;
+    raw_data[4*14+3] = 'i' as u8;
+    raw_data[4*15+0] = 's' as u8;
+    raw_data[4*15+1] = ' ' as u8;
+    raw_data[4*15+2] = 'y' as u8;
+    raw_data[4*15+3] = 'o' as u8;
+    raw_data[4*17+0] = 'u' as u8;
+    raw_data[4*17+1] = 'r' as u8;
+    raw_data[4*17+2] = ' ' as u8;
+    raw_data[4*17+3] = 'n' as u8;
+    raw_data[4*18+0] = 'a' as u8;
+    raw_data[4*18+1] = 'm' as u8;
+    raw_data[4*18+2] = 'e' as u8;
+    raw_data[4*18+3] = '?' as u8;
+    raw_data[4*04+0] = '\n' as u8;
+    let volume = Rc::new(RefCell::new(HFSVolume {
+        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        header,
+        catalog_fork: Weak::new(),
+        extents_fork: Weak::new(),
+        forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
+    }));
+    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut buffer = [0u8; 33];
+    fork.read(0, buffer.as_mut()).unwrap();
+    //println!("Buffer: {:?}", buffer.to_vec());
+    let expected: Vec<u8> = "Hello, World!\nWhat is your name?\n".bytes().collect();
+    println!("Expected:");
+    for row in 0..(expected.len()+16-1) / 16 {
+        print!("  ");
+        for idx in 0..8 {
+            if row*16 + idx < expected.len() {
+                print!("{:02x} ", expected[row*16 + idx]);
+            }
+        }
+        for idx in 8..16 {
+            if row*16 + idx < expected.len() {
+                print!(" {:02x}", expected[row*16 + idx]);
+            }
+        }
+        println!("");
+    }
+    println!("Buffer:");
+    for row in 0..(buffer.len()+16-1) / 16 {
+        print!("  ");
+        for idx in 0..8 {
+            if row*16 + idx < buffer.len() {
+                print!("{:02x} ", buffer[row*16 + idx]);
+            }
+        }
+        for idx in 8..16 {
+            if row*16 + idx < buffer.len() {
+                print!(" {:02x}", buffer[row*16 + idx]);
+            }
+        }
+        println!("");
+    }
+    let result = std::str::from_utf8(buffer.as_ref());
+    assert_eq!(result.unwrap(), "Hello, World!\nWhat is your name?\n");
 }
 
 #[test]

@@ -747,15 +747,21 @@ struct Fork<F: Read + Seek> {
     file: Rc<RefCell<F>>,
     volume: Rc<RefCell<HFSVolume<F>>>,
     logical_size: u64,
-    extents: Vec<(u32, u32)>,
+    extents: Vec<(u32, u32, u64, u64)>,
 }
 
 impl<F: Read + Seek> Fork<F> {
     fn load(file: Rc<RefCell<F>>, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
+        let block_size = volume.borrow().header.blockSize as u64;
         //Err(Error::new(ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
+        let mut extent_position = 0;
+        println!("Block Size: {}", block_size);
         for extent in &data.extents {
-            extents.push((extent.startBlock, extent.blockCount));
+            let extent_size = extent.blockCount as u64 * block_size;
+            println!("{} = {} = {} = {}", extent.startBlock, extent.blockCount, extent_position, extent_size);
+            extents.push((extent.startBlock, extent.blockCount, extent_position, extent_size));
+            extent_position += extent_size;
         }
         Ok(Fork { file, volume, logical_size: data.logicalSize, extents })
     }
@@ -772,11 +778,66 @@ impl<F: Read + Seek> Fork<F> {
     fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
         let volume = self.volume.borrow();
         let mut file = self.file.borrow_mut();
+        let block_size = volume.header.blockSize as u64;
+        //let mut block = offset / volume.header.blockSize as u64;
+        //let mut block_offset = offset % volume.header.blockSize as u64;
+        //let mut buffer_offset = 0;
+        //let mut bytes_remaining = buffer.len() as u64;
+        //let mut extent_block = 0;
+        let mut bytes_read = 0;
+        for extent in &self.extents {
+            println!("{:?}", extent);
+            let (start_block, _, extent_begin, extent_length) = *extent;
+            println!("{} - {} - {}", start_block, extent_begin, extent_length);
+            let extent_end = extent_begin + extent_length;
+            if offset >= extent_end {
+                continue;
+            }
+            //if (offset + bytes_read as u64) < extent_begin {
+            //    break;
+            //}
+            let extent_offset = if offset > extent_begin {
+                offset - extent_begin  // Partial first extent
+            } else {
+                0
+            };
+            file.seek(std::io::SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
+            let bytes_remaining = buffer.len() - bytes_read;
+            let bytes_to_read = std::cmp::min(extent_length, bytes_remaining as u64);
+            file.read_exact(&mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
+            bytes_read += bytes_to_read as usize;
+            if bytes_read >= buffer.len() {
+                println!("All bytes read");
+                break;
+            }
+
+            //let last_block = (extent_block + extent.1) as u64;
+            //let extent_bytes = extent.1 as u64 * volume.header.blockSize as u64;
+            //if block < last_block {
+            //    file.seek(std::io::SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
+            //    block = 0;
+            //    block_offset = 0;
+            //    let bytes_to_read = std::cmp::min(extent_bytes, bytes_remaining);
+            //    file.read_exact(&mut buffer[buffer_offset as usize..bytes_to_read as usize])?;
+            //    bytes_remaining -= bytes_to_read;
+            //    buffer_offset += bytes_to_read;
+            //}
+            //if bytes_remaining <= 0 {
+            //    break;
+            //}
+        }
         println!("Start: {}", self.extents[0].0 as u64);
-        file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
+        //file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
         println!("Fork read: {}", buffer.len());
-        file.read_exact(buffer)?;
-        Ok(())
+        println!("Bytes read: {}", bytes_read);
+        //file.read_exact(buffer)?;
+        // TODO This should return a byte count and happily accept
+        // a short read, but for now, treat as read_exact()
+        if bytes_read < buffer.len() {
+            Err(Error::new(ErrorKind::UnexpectedEof, "No more extents to read"))
+        } else {
+            Ok(())
+        }
     }
 
     fn len(&self) -> u64 {
