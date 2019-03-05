@@ -143,7 +143,7 @@ impl Eq for HFSString {
 pub struct CatalogKey {
     _case_match: bool,
     parent_id: HFSCatalogNodeID,
-    node_name: HFSString,
+    pub node_name: HFSString,
 }
 
 impl CatalogKey {
@@ -219,7 +219,7 @@ impl Record for IndexRecord {
     }
 }
 
-enum CatalogBody {
+pub enum CatalogBody {
     Folder(HFSPlusCatalogFolder),
     File(HFSPlusCatalogFile),
     FolderThread(CatalogKey),
@@ -227,8 +227,8 @@ enum CatalogBody {
 }
 
 pub struct CatalogRecord {
-    key: CatalogKey,
-    body: CatalogBody,
+    pub key: CatalogKey,
+    pub body: CatalogBody,
 }
 
 impl Record for CatalogRecord {
@@ -941,7 +941,7 @@ impl<F: Read + Seek> HFSVolume<F> {
         }
     }
 
-    fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+    pub fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {
         let path = PathBuf::from(filename);
         let btree = self.catalog_btree.as_ref().unwrap().borrow();
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
