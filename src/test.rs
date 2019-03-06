@@ -1,5 +1,7 @@
 extern crate unicode_normalization;
 
+use rand::{thread_rng, Rng};
+
 use super::*;
 
 use byteorder::WriteBytesExt;
@@ -277,6 +279,24 @@ fn store_hfs_volume_header() {
     //println!("{:?}", actual_buffer);
     header.export(&mut actual_buffer).expect("Failed to save volume header");
     //header.export(&mut Cursor::new(actual_buffer)).expect("Failed to save volume header");
+    //println!("{:?}", actual_buffer);
+    assert_eq!(actual_buffer.len(), 512);
+    assert!(actual_buffer == reference_buffer, "Actual buffer does not equal reference");
+}
+
+#[test]
+fn save_restore_random_hfs_volume_header() {
+    let mut reference_buffer = [0u8; 512];
+    thread_rng().fill(&mut reference_buffer);
+    reference_buffer[4] = 0;  // XXX Clear out the Volume Attributes
+    reference_buffer[5] = 0;  // As unknown bits are currently dropped
+    reference_buffer[6] = 0;  // in translation.  Should this be fixed?
+    reference_buffer[7] = 0;
+    let header = HFSPlusVolumeHeader::import(&mut &reference_buffer[..]).expect("Failed to read Volume Header");
+    let reference_buffer = reference_buffer.to_vec();
+    let mut actual_buffer = Vec::new();
+    header.export(&mut actual_buffer).expect("Failed to save volume header");
+    //println!("{:?}", reference_buffer);
     //println!("{:?}", actual_buffer);
     assert_eq!(actual_buffer.len(), 512);
     assert!(actual_buffer == reference_buffer, "Actual buffer does not equal reference");

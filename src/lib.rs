@@ -24,6 +24,9 @@ extern crate unicode_normalization;
 use unicode_normalization::UnicodeNormalization;
 
 
+extern crate rand;
+
+
 use hfs_strings::fast_unicode_compare;
 
 
