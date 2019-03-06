@@ -2,9 +2,9 @@
 #![allow(non_upper_case_globals, unused_variables)]
 
 //use std::io::{Cursor, Error, ErrorKind, Read, Seek};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 
 
@@ -158,6 +158,15 @@ impl HFSPlusForkData {
             extents: import_record(source)?,
         })
     }
+
+    fn export(&self, source: &mut Write) -> io::Result<()> {
+        source.write_u64::<BigEndian>(self.logicalSize)?;
+        source.write_u32::<BigEndian>(self.clumpSize)?;
+        source.write_u32::<BigEndian>(self.totalBlocks)?;
+        export_record(&self.extents, source)?;
+
+        Ok(())
+    }
 }
 
 //impl HFSPlusExtentRecord {
@@ -174,6 +183,19 @@ impl HFSPlusForkData {
            HFSPlusExtentDescriptor::import(source)?,
         ])
     }
+
+    fn export_record(record: &[HFSPlusExtentDescriptor], source: &mut Write) -> io::Result<()> {
+        record[0].export(source)?;
+        record[1].export(source)?;
+        record[2].export(source)?;
+        record[3].export(source)?;
+        record[4].export(source)?;
+        record[5].export(source)?;
+        record[6].export(source)?;
+        record[7].export(source)?;
+
+        Ok(())
+    }
 //}
 
 impl HFSPlusExtentDescriptor {
@@ -182,6 +204,13 @@ impl HFSPlusExtentDescriptor {
             startBlock: source.read_u32::<BigEndian>()?,
             blockCount: source.read_u32::<BigEndian>()?,
         })
+    }
+
+    fn export(&self, source: &mut Write) -> io::Result<()> {
+        source.write_u32::<BigEndian>(self.startBlock)?;
+        source.write_u32::<BigEndian>(self.blockCount)?;
+
+        Ok(())
     }
 }
 
@@ -309,6 +338,51 @@ impl HFSPlusVolumeHeader {
             attributesFile: HFSPlusForkData::import(source)?,
             startupFile: HFSPlusForkData::import(source)?,
         })
+    }
+
+    pub fn export(&self, source: &mut Write) -> io::Result<()> {
+        source.write_u16::<BigEndian>(self.signature)?;
+        source.write_u16::<BigEndian>(self.version)?;
+        source.write_u32::<BigEndian>(self.attributes.bits)?;
+        source.write_u32::<BigEndian>(self.lastMountedVersion)?;
+        source.write_u32::<BigEndian>(self.journalInfoBlock)?;
+
+        source.write_u32::<BigEndian>(self.createDate)?;
+        source.write_u32::<BigEndian>(self.modifyDate)?;
+        source.write_u32::<BigEndian>(self.backupDate)?;
+        source.write_u32::<BigEndian>(self.checkedDate)?;
+
+        source.write_u32::<BigEndian>(self.fileCount)?;
+        source.write_u32::<BigEndian>(self.folderCount)?;
+
+        source.write_u32::<BigEndian>(self.blockSize)?;
+        source.write_u32::<BigEndian>(self.totalBlocks)?;
+        source.write_u32::<BigEndian>(self.freeBlocks)?;
+
+        source.write_u32::<BigEndian>(self.nextAllocation)?;
+        source.write_u32::<BigEndian>(self.rsrcClumpSize)?;
+        source.write_u32::<BigEndian>(self.dataClumpSize)?;
+        source.write_u32::<BigEndian>(self.nextCatalogID)?;
+
+        source.write_u32::<BigEndian>(self.writeCount)?;
+        source.write_u64::<BigEndian>(self.encodingsBitmap)?;
+
+        source.write_u32::<BigEndian>(self.finderInfo[0])?;
+        source.write_u32::<BigEndian>(self.finderInfo[1])?;
+        source.write_u32::<BigEndian>(self.finderInfo[2])?;
+        source.write_u32::<BigEndian>(self.finderInfo[3])?;
+        source.write_u32::<BigEndian>(self.finderInfo[4])?;
+        source.write_u32::<BigEndian>(self.finderInfo[5])?;
+        source.write_u32::<BigEndian>(self.finderInfo[6])?;
+        source.write_u32::<BigEndian>(self.finderInfo[7])?;
+
+        self.allocationFile.export(source)?;
+        self.extentsFile.export(source)?;
+        self.catalogFile.export(source)?;
+        self.attributesFile.export(source)?;
+        self.startupFile.export(source)?;
+
+        Ok(())
     }
 }
 

@@ -262,6 +262,27 @@ fn load_bad_version_file() {
 }
 
 #[test]
+fn store_hfs_volume_header() {
+    let mut file = File::open("hfsp-blank.img").expect("Failed to open blank volume image");
+    file.seek(std::io::SeekFrom::Start(1024)).expect("Failed to seek to volume header");
+    //let mut reference_buffer = [0u8; 512];
+    //let mut reference_buffer = Vec::new();
+    let mut reference_buffer = vec![0u8; 512];
+    file.read_exact(&mut reference_buffer).expect("Failed to read volume header");
+    let header = blank_volume_header();
+    //let mut actual_buffer = [0u8, 512];
+    //header.export(&mut Cursor::new(actual_buffer)).expect("Failed to save volume header");
+    //let mut actual_buffer = vec![0u8; 012];
+    let mut actual_buffer = Vec::new();
+    //println!("{:?}", actual_buffer);
+    header.export(&mut actual_buffer).expect("Failed to save volume header");
+    //header.export(&mut Cursor::new(actual_buffer)).expect("Failed to save volume header");
+    //println!("{:?}", actual_buffer);
+    assert_eq!(actual_buffer.len(), 512);
+    assert!(actual_buffer == reference_buffer, "Actual buffer does not equal reference");
+}
+
+#[test]
 fn test_bad_fork_data() {
     let fork_data = HFSPlusForkData {
         logicalSize: 32768,
