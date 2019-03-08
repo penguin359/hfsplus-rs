@@ -150,6 +150,15 @@ pub struct HFSPlusExtentDescriptor {
 }
 
 impl HFSPlusForkData {
+    fn new() -> Self {
+        Self {
+            logicalSize: 0,
+            clumpSize: 0,
+            totalBlocks: 0,
+            extents: new_record(),
+        }
+    }
+
     fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
             logicalSize: source.read_u64::<BigEndian>()?,
@@ -170,6 +179,19 @@ impl HFSPlusForkData {
 }
 
 //impl HFSPlusExtentRecord {
+    pub fn new_record() -> HFSPlusExtentRecord {
+        [
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+           HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0 },
+        ]
+    }
+
     //fn import(source: &mut Read) -> io::Result<Self> {
     fn import_record(source: &mut Read) -> io::Result<HFSPlusExtentRecord> {
         Ok([

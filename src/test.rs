@@ -464,6 +464,94 @@ fn load_fragmented_fork_data() {
     assert_eq!(result.unwrap(), "Hello, World!\nWhat is your name?\n");
 }
 
+#[ignore]
+#[test]
+fn load_fragmented_fork_data_with_overflow() {
+    let mut header = empty_v4_volume_header();
+    let mut raw_data = create_dead_beef(1024);
+    header.blockSize = 4;   // Really small block size to ease testing
+    header.catalogFile.logicalSize = 33;
+    header.catalogFile.totalBlocks = 9;
+    let mut overflow_extents = [
+        new_record(),
+        new_record(),
+        new_record(),
+    ];
+    let extents = [
+        (  5, 3), ( 11, 2), ( 17, 5), (  3, 1),  // 11*4 = 44 blocks (total  44)
+        ( 40, 2), ( 25, 4), ( 50, 1), ( 54, 3),  // 10*4 = 40 blocks (total  84)
+        ( 60, 1), ( 64, 1), ( 66, 5), ( 73, 1),  //  8*4 = 32 blocks (total 116)
+        ( 76, 2), ( 79, 4), ( 85, 1), ( 74, 2),  //  9*4 = 36 blocks (total 152)
+        ( 30, 1), ( 34, 1), ( 36, 1), ( 85, 1),  //  4*4 = 16 blocks (total 168)
+        (100, 5), (110, 6), (120, 2), (125, 4),  // 17*4 = 68 blocks (total 236)
+        (130, 2), (157, 1), (140, 2), (  0, 0),  //  5*4 = 20 blocks (total 256)
+    ];
+    let mut expected = Vec::new();
+    let mut value = 0u16;
+    for (idx, (start, size)) in extents.iter().enumerate() {
+        let group = match idx {
+            x if x < 8  => &mut header.catalogFile.extents[idx],
+            x if x < 16 => &mut overflow_extents[0][idx-8],
+            x if x < 24 => &mut overflow_extents[1][idx-16],
+            x if x < 32 => &mut overflow_extents[2][idx-24],
+            _ => { panic!("No extents left"); }
+        };
+
+        group.startBlock = *start as u32;
+        group.blockCount = *size as u32;
+        for i in 0..4**size {
+            raw_data[*start + i] = value as u8;
+            expected.push(value as u8);
+            value += 1;
+        }
+    }
+    let volume = Rc::new(RefCell::new(HFSVolume {
+        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        header,
+        catalog_fork: Weak::new(),
+        extents_fork: Weak::new(),
+        forks: HashMap::new(),
+        catalog_btree: None,
+        extents_btree: None,
+    }));
+    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut buffer = [0u8; 256];
+    fork.read(0, buffer.as_mut()).unwrap();
+    //println!("Buffer: {:?}", buffer.to_vec());
+    println!("Expected:");
+    for row in 0..(expected.len()+16-1) / 16 {
+        print!("  ");
+        for idx in 0..8 {
+            if row*16 + idx < expected.len() {
+                print!("{:02x} ", expected[row*16 + idx]);
+            }
+        }
+        for idx in 8..16 {
+            if row*16 + idx < expected.len() {
+                print!(" {:02x}", expected[row*16 + idx]);
+            }
+        }
+        println!("");
+    }
+    println!("Buffer:");
+    for row in 0..(buffer.len()+16-1) / 16 {
+        print!("  ");
+        for idx in 0..8 {
+            if row*16 + idx < buffer.len() {
+                print!("{:02x} ", buffer[row*16 + idx]);
+            }
+        }
+        for idx in 8..16 {
+            if row*16 + idx < buffer.len() {
+                print!(" {:02x}", buffer[row*16 + idx]);
+            }
+        }
+        println!("");
+    }
+    assert_eq!(buffer.len(), expected.len());
+    assert_eq!(buffer.to_vec(), expected);
+}
+
 #[test]
 fn load_beyond_end_of_fork_extents() {
     let mut header = empty_v4_volume_header();
