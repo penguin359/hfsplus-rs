@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{Cursor, Error, ErrorKind, Read, Seek};
 use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::marker::PhantomData;
 
 use std::fmt;
 
@@ -149,7 +150,7 @@ pub struct CatalogKey {
     pub node_name: HFSString,
 }
 
-impl CatalogKey {
+impl Key for CatalogKey {
     fn import(source: &mut Read) -> HFSResult<Self> {
         let key_length = source.read_u16::<BigEndian>()?;
         if key_length < 6 {
@@ -197,27 +198,24 @@ impl PartialEq for CatalogKey {
 impl Eq for CatalogKey {
 }
 
-impl Key for CatalogKey {
-}
-
-pub trait Record {
-    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self>
+pub trait Record<K> {
+    fn import(source: &mut Read, key: K) -> std::io::Result<Self>
         where Self: Sized;
-    fn get_key(&self) -> &CatalogKey;
+    fn get_key(&self) -> &K;
 }
 
-pub struct IndexRecord {
-    key: CatalogKey,
+pub struct IndexRecord<K> {
+    key: K,
     node_id: u32,
 }
 
-impl Record for IndexRecord {
-    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
+impl<K> Record<K> for IndexRecord<K> {
+    fn import(source: &mut Read, key: K) -> std::io::Result<Self> {
         let node_id = source.read_u32::<BigEndian>()?;
         Ok(IndexRecord { key, node_id })
     }
 
-    fn get_key(&self) -> &CatalogKey {
+    fn get_key(&self) -> &K {
         &self.key
     }
 }
@@ -234,7 +232,7 @@ pub struct CatalogRecord {
     pub body: CatalogBody,
 }
 
-impl Record for CatalogRecord {
+impl Record<CatalogKey> for CatalogRecord {
     fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
         let record_type = source.read_i16::<BigEndian>()?;
         let body = match record_type {
@@ -460,7 +458,9 @@ impl From<HFSError> for Error {
 type HFSResult<T> = Result<T, HFSError>;
 
 
-pub trait Key : Ord + PartialOrd + Eq + PartialEq {
+pub trait Key : fmt::Debug + Ord + PartialOrd + Eq + PartialEq {
+    fn import(source: &mut Read) -> HFSResult<Self>
+        where Self: Sized;
 }
 
 pub struct HeaderNode {
@@ -474,25 +474,26 @@ pub struct MapNode {
     _descriptor: BTNodeDescriptor,
 }
 
-pub struct IndexNode {
+pub struct IndexNode<K> {
     descriptor: BTNodeDescriptor,
-    records: Vec<IndexRecord>,
+    records: Vec<IndexRecord<K>>,
 }
 
-pub struct LeafNode<R: Record> {
+pub struct LeafNode<K, R: Record<K>> {
     pub descriptor: BTNodeDescriptor,
+    key: PhantomData<K>,
     records: Vec<Rc<R>>,
 }
 
-pub enum Node<R: Record> {
+pub enum Node<K, R: Record<K>> {
     HeaderNode(HeaderNode),
     MapNode(MapNode),
-    IndexNode(IndexNode),
-    LeafNode(LeafNode<R>),
+    IndexNode(IndexNode<K>),
+    LeafNode(LeafNode<K, R>),
 }
 
-impl<R: Record> Node<R> {
-    fn load(data: &[u8]) -> Result<Node<R>, HFSError> {
+impl<K: Key, R: Record<K>> Node<K, R> {
+    fn load(data: &[u8]) -> Result<Node<K, R>, HFSError> {
         // TODO Check minimum size
         // TODO Check numRecords within size limits
         let node = BTNodeDescriptor::import(&mut &data[..])?;
@@ -537,10 +538,10 @@ impl<R: Record> Node<R> {
                 _descriptor: node,
             }))
         } else if node.kind == kBTIndexNode {
-            let mut r = Vec::<IndexRecord>::new();
+            let mut r = Vec::<IndexRecord<K>>::new();
             for record in &records {
                 let mut v = Cursor::new(record);
-                let r2 = CatalogKey::import(&mut v)?;
+                let r2 = <K>::import(&mut v)?;
                 println!("File: {:?}", r2);
                 r.push(IndexRecord::import(&mut v, r2)?);
             }
@@ -552,12 +553,13 @@ impl<R: Record> Node<R> {
             let mut r = Vec::<Rc<R>>::new();
             for record in &records {
                 let mut v = Cursor::new(record);
-                let r2 = CatalogKey::import(&mut v)?;
+                let r2 = K::import(&mut v)?;
                 println!("File: {:?}", r2);
                 r.push(Rc::new(R::import(&mut v, r2)?));
             }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
+                key: PhantomData,
                 records: r,
             }))
         } else {
@@ -568,15 +570,16 @@ impl<R: Record> Node<R> {
 }
 
 
-pub struct BTree<F: Read + Seek, R> {
+pub struct BTree<F: Read + Seek, K, R> {
     fork: Rc<RefCell<Fork<F>>>,
     node_size: u16,
     pub header: HeaderNode,
+    _key: PhantomData<K>,
     _top_node: Option<R>,
 }
 
-impl<F: Read + Seek, R: Record> BTree<F, R> {
-    fn open(fork_rc: ForkRc<F>) -> Result<BTree<F, R>, HFSError> {
+impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
+    fn open(fork_rc: ForkRc<F>) -> Result<BTree<F, K, R>, HFSError> {
         let node_size;
         let header;
         {
@@ -595,7 +598,7 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
             buffer.push(0);
         }
         fork.read(512, &mut buffer[512..]).expect("Failed to read from fork");
-        let header_node = Node::<CatalogRecord>::load(&buffer)?;
+        let header_node = Node::<K, R>::load(&buffer)?;
         header = match header_node {
             Node::HeaderNode(x) => {
                 println!("{:?}", x.descriptor);
@@ -619,16 +622,17 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
             fork: fork_rc,
             node_size,
             header,
+            _key: PhantomData,
             _top_node: None,
         })
     }
 
-    pub fn get_node(&self, node_num: usize) -> HFSResult<Node<R>> {
+    pub fn get_node(&self, node_num: usize) -> HFSResult<Node<K, R>> {
         {
         let fork = self.fork.borrow_mut();
         let mut buffer = vec![0; self.node_size as usize];
         fork.read((node_num*self.node_size as usize) as u64, &mut buffer).expect("Failed to read from fork");
-        let node = Node::<R>::load(&buffer)?;
+        let node = Node::<K, R>::load(&buffer)?;
         //header = match header_node {
         //    Node::HeaderNode(x) => {
         //        println!("{:?}", x.descriptor);
@@ -642,7 +646,7 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
         }
     }
 
-    fn get_record_range_node(&self, first: &CatalogKey, last: &CatalogKey, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range_node(&self, first: &K, last: &K, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
@@ -692,7 +696,7 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
         }
     }
 
-    fn get_record_node(&self, key: &CatalogKey, node_id: usize) -> HFSResult<Rc<R>> {
+    fn get_record_node(&self, key: &K, node_id: usize) -> HFSResult<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
@@ -726,16 +730,16 @@ impl<F: Read + Seek, R: Record> BTree<F, R> {
         }
     }
 
-    fn get_record(&self, key: &CatalogKey) -> HFSResult<Rc<R>> {
+    fn get_record(&self, key: &K) -> HFSResult<Rc<R>> {
         self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 
-    fn get_record_range(&self, first: &CatalogKey, last: &CatalogKey) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range(&self, first: &K, last: &K) -> HFSResult<Vec<Rc<R>>> {
         self.get_record_range_node(first, last, self.header.header.rootNode as usize)
     }
 }
 
-type BTreeRc<F, R> = Rc<RefCell<BTree<F, R>>>;
+type BTreeRc<F, K, R> = Rc<RefCell<BTree<F, K, R>>>;
 
 
 mod internal;
@@ -865,8 +869,8 @@ pub struct HFSVolume<F: Read + Seek> {
     catalog_fork: Weak<RefCell<Fork<F>>>,
     extents_fork: Weak<RefCell<Fork<F>>>,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
-    pub catalog_btree: Option<BTreeRc<F, CatalogRecord>>,
-    extents_btree: Option<BTreeRc<F, CatalogRecord>>,
+    pub catalog_btree: Option<BTreeRc<F, CatalogKey, CatalogRecord>>,
+    extents_btree: Option<BTreeRc<F, CatalogKey, CatalogRecord>>,
 }
 
 impl<F: Read + Seek> HFSVolume<F> {
