@@ -479,17 +479,16 @@ pub struct IndexNode<K> {
     records: Vec<IndexRecord<K>>,
 }
 
-pub struct LeafNode<K, R: Record<K>> {
+pub struct LeafNode<R> {
     pub descriptor: BTNodeDescriptor,
-    key: PhantomData<K>,
     records: Vec<Rc<R>>,
 }
 
-pub enum Node<K, R: Record<K>> {
+pub enum Node<K, R> {
     HeaderNode(HeaderNode),
     MapNode(MapNode),
     IndexNode(IndexNode<K>),
-    LeafNode(LeafNode<K, R>),
+    LeafNode(LeafNode<R>),
 }
 
 impl<K: Key, R: Record<K>> Node<K, R> {
@@ -541,7 +540,7 @@ impl<K: Key, R: Record<K>> Node<K, R> {
             let mut r = Vec::<IndexRecord<K>>::new();
             for record in &records {
                 let mut v = Cursor::new(record);
-                let r2 = <K>::import(&mut v)?;
+                let r2 = K::import(&mut v)?;
                 println!("File: {:?}", r2);
                 r.push(IndexRecord::import(&mut v, r2)?);
             }
@@ -559,7 +558,6 @@ impl<K: Key, R: Record<K>> Node<K, R> {
             }
             Ok(Node::LeafNode(LeafNode {
                 descriptor: node,
-                key: PhantomData,
                 records: r,
             }))
         } else {
