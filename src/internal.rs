@@ -937,6 +937,37 @@ impl ExtendedFolderInfo {
 //};
 //typedef struct HFSPlusExtentKey HFSPlusExtentKey;
 
+#[derive(Debug)]
+pub struct HFSPlusExtentKey {
+    pub keyLength:              u16,
+    pub forkType:	        u8,
+    pub pad:	                u8,
+    pub fileID:	                HFSCatalogNodeID,
+    pub startBlock:	        u32,
+}
+
+impl HFSPlusExtentKey {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
+        Ok(Self {
+            keyLength:          source.read_u16::<BigEndian>()?,
+            forkType:	        source.read_u8()?,
+            pad:	        source.read_u8()?,
+            fileID:	        source.read_u32::<BigEndian>()?,
+            startBlock:	        source.read_u32::<BigEndian>()?,
+        })
+    }
+
+    pub fn export(&self, source: &mut Write) -> io::Result<()> {
+        source.write_u16::<BigEndian>(self.keyLength)?;
+        source.write_u8(self.forkType)?;
+        source.write_u8(self.pad)?;
+        source.write_u32::<BigEndian>(self.fileID)?;
+        source.write_u32::<BigEndian>(self.startBlock)?;
+
+        Ok(())
+    }
+}
+
 
 
 //- Attributes File

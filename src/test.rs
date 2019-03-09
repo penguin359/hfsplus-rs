@@ -303,6 +303,91 @@ fn save_restore_random_hfs_volume_header() {
 }
 
 #[test]
+fn load_raw_extent_key() {
+    let raw_data = [
+        0, 10,          // Key length = 10
+        0xff,           // Fork type = resource (0xff)
+        0,              // Pad
+        0, 0, 2, 47,    // Catalog ID = 559
+        0, 0, 3, 34,	// Start block = 802
+    ];
+    let key_result = HFSPlusExtentKey::import(&mut &raw_data[..]);
+    assert!(key_result.is_ok(), "Failed to read extent key");
+    let key = key_result.unwrap();
+    assert_eq!(key.keyLength, 10);
+    assert_eq!(key.forkType, 255);
+    assert_eq!(key.fileID, 559);
+    assert_eq!(key.startBlock, 802);
+
+    let mut actual_buffer = Vec::new();
+    key.export(&mut actual_buffer).expect("Failed to save extent overflow key");
+    assert_eq!(actual_buffer.len(), raw_data.len());
+    assert_eq!(actual_buffer, raw_data, "Actual buffer does not equal reference key");
+}
+
+#[test]
+fn load_btree_extent_key() {
+    let raw_data = [
+        0, 10,          // Key length = 10
+        0xff,           // Fork type = resource (0xff)
+        0,              // Pad
+        0, 0, 2, 47,    // Catalog ID = 559
+        0, 0, 3, 34,	// Start block = 802
+    ];
+    let key_result = ExtentKey::import(&mut &raw_data[..]);
+    assert!(key_result.is_ok(), "Failed to read extent key: {:?}", key_result.unwrap_err());
+    let key = key_result.unwrap();
+    let expected = ExtentKey::new(559, 0xff, 802);
+    assert_eq!(key, expected);
+}
+
+#[test]
+fn test_extent_key_sort_order() {
+    let lowest  = ExtentKey::new(27, 0x00, 0);
+    let low     = ExtentKey::new(27, 0x00, 802);
+    let mid     = ExtentKey::new(27, 0xff, 13);
+    let high    = ExtentKey::new(27, 0xff, 400);
+    let highest = ExtentKey::new(59, 0x00, 0);
+
+    assert_ne!(lowest, low);
+    assert_ne!(lowest, mid);
+    assert_ne!(lowest, high);
+    assert_ne!(lowest, highest);
+    assert_ne!(low, mid);
+    assert_ne!(low, high);
+    assert_ne!(low, highest);
+    assert_ne!(mid, high);
+    assert_ne!(mid, highest);
+    assert_ne!(high, highest);
+
+    assert_eq!(lowest .partial_cmp(&lowest),  Some(Ordering::Equal));
+    assert_eq!(lowest .partial_cmp(&low),     Some(Ordering::Less));
+    assert_eq!(lowest .partial_cmp(&mid),     Some(Ordering::Less));
+    assert_eq!(lowest .partial_cmp(&high),    Some(Ordering::Less));
+    assert_eq!(lowest .partial_cmp(&highest), Some(Ordering::Less));
+    assert_eq!(low    .partial_cmp(&lowest),  Some(Ordering::Greater));
+    assert_eq!(low    .partial_cmp(&low),     Some(Ordering::Equal));
+    assert_eq!(low    .partial_cmp(&mid),     Some(Ordering::Less));
+    assert_eq!(low    .partial_cmp(&high),    Some(Ordering::Less));
+    assert_eq!(low    .partial_cmp(&highest), Some(Ordering::Less));
+    assert_eq!(mid    .partial_cmp(&lowest),  Some(Ordering::Greater));
+    assert_eq!(mid    .partial_cmp(&low),     Some(Ordering::Greater));
+    assert_eq!(mid    .partial_cmp(&mid),     Some(Ordering::Equal));
+    assert_eq!(mid    .partial_cmp(&high),    Some(Ordering::Less));
+    assert_eq!(mid    .partial_cmp(&highest), Some(Ordering::Less));
+    assert_eq!(high   .partial_cmp(&lowest),  Some(Ordering::Greater));
+    assert_eq!(high   .partial_cmp(&low),     Some(Ordering::Greater));
+    assert_eq!(high   .partial_cmp(&mid),     Some(Ordering::Greater));
+    assert_eq!(high   .partial_cmp(&high),    Some(Ordering::Equal));
+    assert_eq!(high   .partial_cmp(&highest), Some(Ordering::Less));
+    assert_eq!(highest.partial_cmp(&lowest),  Some(Ordering::Greater));
+    assert_eq!(highest.partial_cmp(&low),     Some(Ordering::Greater));
+    assert_eq!(highest.partial_cmp(&mid),     Some(Ordering::Greater));
+    assert_eq!(highest.partial_cmp(&high),    Some(Ordering::Greater));
+    assert_eq!(highest.partial_cmp(&highest), Some(Ordering::Equal));
+}
+
+#[test]
 fn test_bad_fork_data() {
     let fork_data = HFSPlusForkData {
         logicalSize: 32768,

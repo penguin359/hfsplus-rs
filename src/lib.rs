@@ -198,6 +198,57 @@ impl PartialEq for CatalogKey {
 impl Eq for CatalogKey {
 }
 
+
+#[derive(Debug)]
+pub struct ExtentKey(HFSPlusExtentKey);
+
+impl ExtentKey {
+    fn new(file_id: HFSCatalogNodeID, fork_type: u8, start_block: u32) -> Self {
+        ExtentKey(HFSPlusExtentKey {
+            keyLength:          10,
+            forkType:	        fork_type,
+            pad:	        0,
+            fileID:	        file_id,
+            startBlock:	        start_block,
+        })
+    }
+}
+
+impl Key for ExtentKey {
+    fn import(source: &mut Read) -> HFSResult<Self> {
+        Ok(ExtentKey(HFSPlusExtentKey::import(source)?))
+    }
+}
+
+impl PartialOrd for ExtentKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ExtentKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.0.fileID.cmp(&other.0.fileID) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Equal => match self.0.forkType.cmp(&other.0.forkType) {
+                Ordering::Less => Ordering::Less,
+                Ordering::Greater => Ordering::Greater,
+                Ordering::Equal => self.0.startBlock.cmp(&other.0.startBlock),
+            },
+        }
+    }
+}
+
+impl PartialEq for ExtentKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for ExtentKey {
+}
+
 pub trait Record<K> {
     fn import(source: &mut Read, key: K) -> std::io::Result<Self>
         where Self: Sized;
