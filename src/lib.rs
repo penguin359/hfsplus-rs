@@ -2,7 +2,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::fs::File;
 //use std::io::{Read, Write, Seek};
-use std::io::{Cursor, Error, ErrorKind, Read, Seek};
+use std::io::{Cursor, Error, ErrorKind, Read, Seek, Write};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
@@ -171,6 +171,10 @@ impl Key for CatalogKey {
             node_name: HFSString(node_name),
         })
     }
+
+    fn export(&self, source: &mut Write) -> HFSResult<()> {
+        Err(HFSError::UnsupportedOperation)
+    }
 }
 
 impl PartialOrd for CatalogKey {
@@ -218,6 +222,11 @@ impl Key for ExtentKey {
     fn import(source: &mut Read) -> HFSResult<Self> {
         Ok(ExtentKey(HFSPlusExtentKey::import(source)?))
     }
+
+    fn export(&self, source: &mut Write) -> HFSResult<()> {
+        self.0.export(source)?;
+        Ok(())
+    }
 }
 
 impl PartialOrd for ExtentKey {
@@ -252,6 +261,7 @@ impl Eq for ExtentKey {
 pub trait Record<K> {
     fn import(source: &mut Read, key: K) -> std::io::Result<Self>
         where Self: Sized;
+    fn export(&self, source: &mut Write) -> std::io::Result<()>;
     fn get_key(&self) -> &K;
 }
 
@@ -264,6 +274,10 @@ impl<K> Record<K> for IndexRecord<K> {
     fn import(source: &mut Read, key: K) -> std::io::Result<Self> {
         let node_id = source.read_u32::<BigEndian>()?;
         Ok(IndexRecord { key, node_id })
+    }
+
+    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+        Err(Error::new(ErrorKind::Other, "Unsupported operation"))
     }
 
     fn get_key(&self) -> &K {
@@ -329,7 +343,33 @@ impl Record<CatalogKey> for CatalogRecord {
         Ok(CatalogRecord { key, body })
     }
 
+    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+        Err(Error::new(ErrorKind::Other, "Unsupported operation"))
+    }
+
     fn get_key(&self) -> &CatalogKey {
+        &self.key
+    }
+}
+
+
+pub struct ExtentRecord {
+    pub key: ExtentKey,
+    pub body: HFSPlusExtentRecord,
+}
+
+impl Record<ExtentKey> for ExtentRecord {
+    fn import(source: &mut Read, key: ExtentKey) -> std::io::Result<Self> {
+        let body = import_record(source)?;
+        Ok(ExtentRecord { key, body })
+    }
+
+    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+        export_record(&self.body, source)?;
+        Ok(())
+    }
+
+    fn get_key(&self) -> &ExtentKey {
         &self.key
     }
 }
@@ -489,6 +529,7 @@ pub enum HFSError {
     BadNode,
     InvalidRecordKey,
     InvalidRecordType,
+    UnsupportedOperation,
 }
 
 impl From<Error> for HFSError {
@@ -512,6 +553,7 @@ type HFSResult<T> = Result<T, HFSError>;
 pub trait Key : fmt::Debug + Ord + PartialOrd + Eq + PartialEq {
     fn import(source: &mut Read) -> HFSResult<Self>
         where Self: Sized;
+    fn export(&self, source: &mut Write) -> HFSResult<()>;
 }
 
 pub struct HeaderNode {

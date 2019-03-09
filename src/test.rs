@@ -339,6 +339,12 @@ fn load_btree_extent_key() {
     let key = key_result.unwrap();
     let expected = ExtentKey::new(559, 0xff, 802);
     assert_eq!(key, expected);
+    let key_result = ExtentKey::import(&mut &raw_data[..]);
+
+    let mut actual_buffer = Vec::new();
+    key.export(&mut actual_buffer).expect("Failed to save extent overflow key");
+    assert_eq!(actual_buffer.len(), raw_data.len());
+    assert_eq!(actual_buffer, raw_data, "Actual buffer does not equal reference key");
 }
 
 #[test]

@@ -193,7 +193,7 @@ impl HFSPlusForkData {
     }
 
     //fn import(source: &mut Read) -> io::Result<Self> {
-    fn import_record(source: &mut Read) -> io::Result<HFSPlusExtentRecord> {
+    pub fn import_record(source: &mut Read) -> io::Result<HFSPlusExtentRecord> {
         Ok([
            HFSPlusExtentDescriptor::import(source)?,
            HFSPlusExtentDescriptor::import(source)?,
@@ -206,7 +206,7 @@ impl HFSPlusForkData {
         ])
     }
 
-    fn export_record(record: &[HFSPlusExtentDescriptor], source: &mut Write) -> io::Result<()> {
+    pub fn export_record(record: &[HFSPlusExtentDescriptor], source: &mut Write) -> io::Result<()> {
         record[0].export(source)?;
         record[1].export(source)?;
         record[2].export(source)?;
