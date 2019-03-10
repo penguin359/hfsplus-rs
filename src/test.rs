@@ -305,7 +305,7 @@ fn save_restore_random_hfs_volume_header() {
 #[test]
 fn load_raw_extent_key() {
     let raw_data = [
-        0, 10,          // Key length = 10
+        0, 10,          // Key length = kHFSPlusExtentKeyMaximumLength
         0xff,           // Fork type = resource (0xff)
         0,              // Pad
         0, 0, 2, 47,    // Catalog ID = 559
@@ -314,7 +314,7 @@ fn load_raw_extent_key() {
     let key_result = HFSPlusExtentKey::import(&mut &raw_data[..]);
     assert!(key_result.is_ok(), "Failed to read extent key");
     let key = key_result.unwrap();
-    assert_eq!(key.keyLength, 10);
+    assert_eq!(key.keyLength, kHFSPlusExtentKeyMaximumLength);
     assert_eq!(key.forkType, 255);
     assert_eq!(key.fileID, 559);
     assert_eq!(key.startBlock, 802);
@@ -328,7 +328,7 @@ fn load_raw_extent_key() {
 #[test]
 fn load_btree_extent_key() {
     let raw_data = [
-        0, 10,          // Key length = 10
+        0, 10,          // Key length = kHFSPlusExtentKeyMaximumLength
         0xff,           // Fork type = resource (0xff)
         0,              // Pad
         0, 0, 2, 47,    // Catalog ID = 559
@@ -703,13 +703,138 @@ fn load_fragmented_fork_data() {
     assert_eq!(result.unwrap(), "Hello, World!\nWhat is your name?\n");
 }
 
+/// write_extents_overflow_file(source, extents);
+///
+/// Helper function for creating a simple extents overflow file
+/// This is a very simple function just used for constructing a test vector
+/// for a small filesystem. It assumes that the provided key/records are
+/// pre-sorted, less than 256, and all fit in one leaf node. It also assumes
+/// a small node size of 512 bytes which is not typical, but easier for
+/// testing.
+///
+/// This is written to hand-craft the data and avoid relying on must of the
+/// normal filesystem code that will be ultimately tested.
+///
+fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlusExtentRecord)]) {
+    let mut raw_header_data: Vec<u8> = vec![
+        0, 0, 0, 0,             // fLink = 0
+        0, 0, 0, 0,             // bLink = 0
+        kBTHeaderNode as u8,    // kind = header node
+        0,                      // height = 0
+        0, 3,                   // numRecords = 3
+        0, 0,                   // reserved
+    ];
+
+    let header_node: [u8; 106] = [
+        0, 1,                   // treeDepth = 1
+        0, 0, 0, 1,             // rootNode = 1
+        0, 0, 0, 1,             // leafRecords = 1
+        0, 0, 0, 1,             // firstLeafNode = 1
+        0, 0, 0, 1,             // lastLeafNode = 1
+        2, 0,                   // nodeSize = 512
+        0, 10,                  // maxKeyLength = kHFSPlusExtentKeyMaximumLength
+        0, 0, 0, 1,             // totalNodes = 1
+        0, 0, 0, 0,             // freeNodes = 0
+        0, 0,                   // reserved1
+        0, 0, 2, 0,             // clumpSize = 512
+        0,                      // btreeType = kHFSBTreeType
+        0,                      // keyCompareType = 0
+        0, 0, 0, 2,             // attributes = kBTBigKeysMask
+        0, 0, 0, 0,             // reserved3[16]
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ];
+    let user_data_buffer = [0u8; 128];
+    let map_node = [0u8; 256];
+    raw_header_data.extend(header_node.iter());
+    raw_header_data.extend(user_data_buffer.iter());
+    raw_header_data.extend(map_node.iter());
+    // First record always starts at offset 14
+    // The Header record is always 106 bytes in length
+    // The User Data is always 128 bytes
+    // 4 16-bit record pointers are needed at the end (one for next free location)
+    // Making the Map Record 256 bytes rounds out the node to 512 bytes
+    raw_header_data.write_u16::<BigEndian>(14+106+128+256).unwrap();
+    raw_header_data.write_u16::<BigEndian>(14+106+128).unwrap();
+    raw_header_data.write_u16::<BigEndian>(14+106).unwrap();
+    raw_header_data.write_u16::<BigEndian>(14).unwrap();
+    assert_eq!(raw_header_data.len(), 512);
+
+    let mut raw_data: Vec<u8> = vec![
+        0, 0, 0, 0,         // fLink = 0
+        0, 0, 0, 0,         // bLink = 0
+        kBTLeafNode as u8,  // kind = leaf node
+        1,                  // height = 1
+        0, 0,               // numRecords = 0
+        0, 0,               // reserved
+    ];
+    raw_data[11] = extents.len() as u8;  // Overwrite the LSB of numRecords
+    let mut positions = Vec::new();
+    for (key, record) in extents {
+        positions.push(raw_data.len() as u16);
+        key.export(&mut raw_data);
+        export_record(&record[..], &mut raw_data).unwrap();
+    }
+    positions.push(raw_data.len() as u16);
+    assert!(raw_data.len() <= 512 - 2*positions.len(), "Overflowed extents leaf record");
+    raw_data.resize(512 - 2*positions.len(), 0);
+    for position in positions {
+        raw_data.write_u16::<BigEndian>(position).unwrap();
+    }
+    assert_eq!(raw_data.len(), 512);
+}
+
+#[ignore]
+#[test]
+fn load_dummy_overflow_file() {
+    let extents = [
+        (ExtentKey::new(41, 0x32, 87), [
+            HFSPlusExtentDescriptor { startBlock:  2, blockCount: 2, },
+            HFSPlusExtentDescriptor { startBlock: 10, blockCount: 1, },
+            HFSPlusExtentDescriptor { startBlock: 12, blockCount: 1, },
+            HFSPlusExtentDescriptor { startBlock:  4, blockCount: 1, },
+            HFSPlusExtentDescriptor { startBlock: 15, blockCount: 3, },
+            HFSPlusExtentDescriptor { startBlock:  0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock:  0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock:  0, blockCount: 0, },
+        ]),
+        (ExtentKey::new(59, 0x00, 145), [
+            HFSPlusExtentDescriptor { startBlock: 9, blockCount: 6, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+            HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        ]),
+    ];
+    let mut buffer = Vec::new();
+    write_extents_overflow_file(&mut buffer, &extents[..]);
+    assert_eq!(buffer.len(), 1024);  // Size of 2 nodes
+    //let btree = BTree::open(Rc::new(RefCell::new(Cursor::new(buffer)))).except("Failed to open overflow b-tree");
+}
+
 #[ignore]
 #[test]
 fn load_fragmented_fork_data_with_overflow() {
     let mut header = empty_v4_volume_header();
     let mut raw_data = create_dead_beef(1024);
     header.blockSize = 4;   // Really small block size to ease testing
-    header.catalogFile.logicalSize = 33;
+    header.catalogFile.logicalSize = 256;
     header.catalogFile.totalBlocks = 9;
     let mut overflow_extents = [
         new_record(),

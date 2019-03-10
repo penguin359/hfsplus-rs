@@ -632,6 +632,10 @@ impl BTHeaderRec {
 //    kBTVariableIndexKeysMask  = 0x00000004
 //};
 
+pub const kBTBadCloseMask           : u32 = 0x00000001;
+pub const kBTBigKeysMask            : u32 = 0x00000002;
+pub const kBTVariableIndexKeysMask  : u32 = 0x00000004;
+
 
 
 //- Catalog File
@@ -1094,6 +1098,8 @@ impl HFSPlusExtentKey {
         Ok(())
     }
 }
+
+pub const kHFSPlusExtentKeyMaximumLength : u16 = 10;
 
 
 
