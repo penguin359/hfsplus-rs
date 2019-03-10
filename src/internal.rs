@@ -457,8 +457,42 @@ pub const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
 //    UInt16    reserved;
 //};
 //typedef struct BTNodeDescriptor BTNodeDescriptor;
-//
-//
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct BTNodeDescriptor {
+    pub fLink: u32,
+    pub bLink: u32,
+    pub kind: i8,
+    pub height: u8,
+    pub numRecords: u16,
+    pub reserved: u16,
+}
+
+impl BTNodeDescriptor {
+    pub fn import(source: &mut Read) -> std::io::Result<Self> {
+        Ok(Self {
+            fLink: source.read_u32::<BigEndian>()?,
+            bLink: source.read_u32::<BigEndian>()?,
+            kind: source.read_i8()?,
+            height: source.read_u8()?,
+            numRecords: source.read_u16::<BigEndian>()?,
+            reserved: source.read_u16::<BigEndian>()?,
+        })
+    }
+
+    pub fn export(&self, source: &mut Write) -> std::io::Result<()> {
+        source.write_u32::<BigEndian>(self.fLink)?;
+        source.write_u32::<BigEndian>(self.bLink)?;
+        source.write_i8(self.kind)?;
+        source.write_u8(self.height)?;
+        source.write_u16::<BigEndian>(self.numRecords)?;
+        source.write_u16::<BigEndian>(self.reserved)?;
+
+        Ok(())
+    }
+}
+
+
 //enum {
 //    kBTLeafNode       = -1,
 //    kBTIndexNode      =  0,
@@ -490,8 +524,66 @@ pub const kBTMapNode      : i8 =  2;
 //    UInt32    reserved3[16];
 //};
 //typedef struct BTHeaderRec BTHeaderRec;
-//
-//
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct BTHeaderRec {
+    pub treeDepth: u16,
+    pub rootNode: u32,
+    pub leafRecords: u32,
+    pub firstLeafNode: u32,
+    pub lastLeafNode: u32,
+    pub nodeSize: u16,
+    maxKeyLength: u16,
+    totalNodes: u32,
+    freeNodes: u32,
+    reserved1: u16,
+    clumpSize: u32,
+    btreeType: u8,
+    keyCompareType: u8,
+    attributes: u32,
+    reserved3: [u32; 16],
+}
+
+impl BTHeaderRec {
+    pub fn import(source: &mut Read) -> std::io::Result<Self> {
+        Ok(Self {
+            treeDepth: source.read_u16::<BigEndian>()?,
+            rootNode: source.read_u32::<BigEndian>()?,
+            leafRecords: source.read_u32::<BigEndian>()?,
+            firstLeafNode: source.read_u32::<BigEndian>()?,
+            lastLeafNode: source.read_u32::<BigEndian>()?,
+            nodeSize: source.read_u16::<BigEndian>()?,
+            maxKeyLength: source.read_u16::<BigEndian>()?,
+            totalNodes: source.read_u32::<BigEndian>()?,
+            freeNodes: source.read_u32::<BigEndian>()?,
+            reserved1: source.read_u16::<BigEndian>()?,
+            clumpSize: source.read_u32::<BigEndian>()?,
+            btreeType: source.read_u8()?,
+            keyCompareType: source.read_u8()?,
+            attributes: source.read_u32::<BigEndian>()?,
+            reserved3: [
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+                source.read_u32::<BigEndian>()?,
+            ],
+        })
+    }
+}
+
+
 //enum BTreeTypes{
 //    kHFSBTreeType           =   0,      // control file
 //    kUserBTreeType          = 128,      // user btree type starts from 128

@@ -16,7 +16,7 @@ extern crate backtrace;
 use backtrace::Backtrace;
 
 extern crate byteorder;
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 #[macro_use]
 extern crate bitflags;
@@ -375,153 +375,6 @@ impl Record<ExtentKey> for ExtentRecord {
 }
 
 
-//typedef UInt32 HFSCatalogNodeID;
-//
-//enum {
-//    kHFSRootParentID            = 1,
-//    kHFSRootFolderID            = 2,
-//    kHFSExtentsFileID           = 3,
-//    kHFSCatalogFileID           = 4,
-//    kHFSBadBlockFileID          = 5,
-//    kHFSAllocationFileID        = 6,
-//    kHFSStartupFileID           = 7,
-//    kHFSAttributesFileID        = 8,
-//    kHFSRepairCatalogFileID     = 14,
-//    kHFSBogusExtentFileID       = 15,
-//    kHFSFirstUserCatalogNodeID  = 16
-//};
-
-
-//struct BTNodeDescriptor {
-//    UInt32    fLink;
-//    UInt32    bLink;
-//    SInt8     kind;
-//    UInt8     height;
-//    UInt16    numRecords;
-//    UInt16    reserved;
-//};
-//typedef struct BTNodeDescriptor BTNodeDescriptor;
-//
-//enum {
-//    kBTLeafNode       = -1,
-//    kBTIndexNode      =  0,
-//    kBTHeaderNode     =  1,
-//    kBTMapNode        =  2
-//};
-
-//#[allow(non_upper_case_globals)]
-//mod hfs {
-//const kBTLeafNode     :i8  = -1;
-//const kBTIndexNode    :i8  =  0;
-//const kBTHeaderNode   :i8  =  1;
-//const kBTMapNode      :i8  =  2;
-//}
-
-
-#[allow(non_snake_case)]
-#[derive(Debug, PartialEq, Eq)]
-pub struct BTNodeDescriptor {
-    pub fLink: u32,
-    pub bLink: u32,
-    kind: i8,
-    height: u8,
-    numRecords: u16,
-    reserved: u16,
-}
-
-impl BTNodeDescriptor {
-    fn import(source: &mut Read) -> std::io::Result<Self> {
-        Ok(Self {
-            fLink: source.read_u32::<BigEndian>()?,
-            bLink: source.read_u32::<BigEndian>()?,
-            kind: source.read_i8()?,
-            height: source.read_u8()?,
-            numRecords: source.read_u16::<BigEndian>()?,
-            reserved: source.read_u16::<BigEndian>()?,
-        })
-    }
-}
-
-
-//struct BTHeaderRec {
-//    UInt16    treeDepth;
-//    UInt32    rootNode;
-//    UInt32    leafRecords;
-//    UInt32    firstLeafNode;
-//    UInt32    lastLeafNode;
-//    UInt16    nodeSize;
-//    UInt16    maxKeyLength;
-//    UInt32    totalNodes;
-//    UInt32    freeNodes;
-//    UInt16    reserved1;
-//    UInt32    clumpSize;      // misaligned
-//    UInt8     btreeType;
-//    UInt8     keyCompareType;
-//    UInt32    attributes;     // long aligned again
-//    UInt32    reserved3[16];
-//};
-//typedef struct BTHeaderRec BTHeaderRec;
-
-#[allow(non_snake_case)]
-#[derive(Debug, PartialEq, Eq)]
-pub struct BTHeaderRec {
-    pub treeDepth: u16,
-    pub rootNode: u32,
-    pub leafRecords: u32,
-    pub firstLeafNode: u32,
-    pub lastLeafNode: u32,
-    pub nodeSize: u16,
-    maxKeyLength: u16,
-    totalNodes: u32,
-    freeNodes: u32,
-    reserved1: u16,
-    clumpSize: u32,
-    btreeType: u8,
-    keyCompareType: u8,
-    attributes: u32,
-    reserved3: [u32; 16],
-}
-
-impl BTHeaderRec {
-    fn import(source: &mut Read) -> std::io::Result<Self> {
-        Ok(Self {
-            treeDepth: source.read_u16::<BigEndian>()?,
-            rootNode: source.read_u32::<BigEndian>()?,
-            leafRecords: source.read_u32::<BigEndian>()?,
-            firstLeafNode: source.read_u32::<BigEndian>()?,
-            lastLeafNode: source.read_u32::<BigEndian>()?,
-            nodeSize: source.read_u16::<BigEndian>()?,
-            maxKeyLength: source.read_u16::<BigEndian>()?,
-            totalNodes: source.read_u32::<BigEndian>()?,
-            freeNodes: source.read_u32::<BigEndian>()?,
-            reserved1: source.read_u16::<BigEndian>()?,
-            clumpSize: source.read_u32::<BigEndian>()?,
-            btreeType: source.read_u8()?,
-            keyCompareType: source.read_u8()?,
-            attributes: source.read_u32::<BigEndian>()?,
-            reserved3: [
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-                source.read_u32::<BigEndian>()?,
-            ],
-        })
-    }
-}
-
-
 #[derive(Debug)]
 pub enum HFSError {
     InvalidData(String),
@@ -657,6 +510,28 @@ impl<K: Key, R: Record<K>> Node<K, R> {
             //Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
             Err(HFSError::InvalidData("Invalid Node Type".to_string()))
         }
+    }
+
+    fn save(&self, data: &mut [u8]) -> Result<(), HFSError> {
+        let data_len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        Ok(match self {
+            Node::LeafNode(x) => {
+                x.descriptor.export(&mut cursor);
+                let mut positions = Vec::new();
+                for record in &x.records {
+                    positions.push(cursor.position() as u16);
+                    record.get_key().export(&mut cursor);
+                    record.export(&mut cursor);
+                }
+                positions.push(cursor.position() as u16);
+                cursor.set_position(data_len - 2*positions.len() as u64);
+                for position in positions.iter().rev() {
+                    cursor.write_u16::<BigEndian>(*position)?;
+                }
+            },
+            _ => { return Err(HFSError::UnsupportedOperation); },
+        })
     }
 }
 

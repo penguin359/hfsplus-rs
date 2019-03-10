@@ -455,6 +455,14 @@ fn load_extents_leaf_node() {
     assert_eq!(&leaf.records[0].body, &extents1);
     assert_eq!(leaf.records[1].get_key(), &extents2_key);
     assert_eq!(&leaf.records[1].body, &extents2);
+
+    let mut actual_buffer = Vec::new();
+    leaf.descriptor.export(&mut actual_buffer);
+    assert_eq!(actual_buffer.len(), 14);
+    assert!(raw_data.starts_with(&actual_buffer));
+    let mut node_buffer = [0u8; 512];
+    Node::LeafNode(leaf).save(&mut node_buffer[..]).expect("Unable to save extent node");
+    assert_eq!(&node_buffer.to_vec(), &raw_data);
 }
 
 #[test]
