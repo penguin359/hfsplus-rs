@@ -309,7 +309,7 @@ fn load_raw_extent_key() {
         0xff,           // Fork type = resource (0xff)
         0,              // Pad
         0, 0, 2, 47,    // Catalog ID = 559
-        0, 0, 3, 34,	// Start block = 802
+        0, 0, 3, 34,    // Start block = 802
     ];
     let key_result = HFSPlusExtentKey::import(&mut &raw_data[..]);
     assert!(key_result.is_ok(), "Failed to read extent key");
@@ -332,14 +332,13 @@ fn load_btree_extent_key() {
         0xff,           // Fork type = resource (0xff)
         0,              // Pad
         0, 0, 2, 47,    // Catalog ID = 559
-        0, 0, 3, 34,	// Start block = 802
+        0, 0, 3, 34,    // Start block = 802
     ];
     let key_result = ExtentKey::import(&mut &raw_data[..]);
     assert!(key_result.is_ok(), "Failed to read extent key: {:?}", key_result.unwrap_err());
     let key = key_result.unwrap();
     let expected = ExtentKey::new(559, 0xff, 802);
     assert_eq!(key, expected);
-    let key_result = ExtentKey::import(&mut &raw_data[..]);
 
     let mut actual_buffer = Vec::new();
     key.export(&mut actual_buffer).expect("Failed to save extent overflow key");
@@ -399,9 +398,9 @@ fn load_extents_leaf_node() {
         0, 1, 0, 4,         // fLink = 65540
         0, 0, 2, 9,         // bLink = 521
         kBTLeafNode as u8,  // kind = leaf node
-        1,	            // height = 1
-        0, 2,	            // numRecords = 2
-        0, 0,	            // reserved
+        1,                  // height = 1
+        0, 2,               // numRecords = 2
+        0, 0,               // reserved
     ];
     let extents1_key = ExtentKey::new(59, 0x00, 87);
     let extents1 = [
@@ -463,6 +462,19 @@ fn load_extents_leaf_node() {
     let mut node_buffer = [0u8; 512];
     Node::LeafNode(leaf).save(&mut node_buffer[..]).expect("Unable to save extent node");
     assert_eq!(&node_buffer.to_vec(), &raw_data);
+}
+
+#[test]
+fn load_save_header_node() {
+    let mut _raw_data: Vec<u8> = vec![
+        0, 0, 20, 7,            // fLink = 5127
+        0, 0, 2, 9,             // bLink = 521
+        kBTHeaderNode as u8,    // kind = leaf node
+        0,                      // height = 1
+        0, 3,                   // numRecords = 2
+        0, 0,                   // reserved
+    ];
+    //Node::LeafNode(leaf).save(&mut node_buffer[..]).expect("Unable to save extent node");
 }
 
 #[test]

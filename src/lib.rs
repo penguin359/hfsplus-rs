@@ -172,7 +172,7 @@ impl Key for CatalogKey {
         })
     }
 
-    fn export(&self, source: &mut Write) -> HFSResult<()> {
+    fn export(&self, _source: &mut Write) -> HFSResult<()> {
         Err(HFSError::UnsupportedOperation)
     }
 }
@@ -210,10 +210,10 @@ impl ExtentKey {
     fn new(file_id: HFSCatalogNodeID, fork_type: u8, start_block: u32) -> Self {
         ExtentKey(HFSPlusExtentKey {
             keyLength:          10,
-            forkType:	        fork_type,
-            pad:	        0,
-            fileID:	        file_id,
-            startBlock:	        start_block,
+            forkType:           fork_type,
+            pad:                0,
+            fileID:             file_id,
+            startBlock:         start_block,
         })
     }
 }
@@ -276,7 +276,7 @@ impl<K> Record<K> for IndexRecord<K> {
         Ok(IndexRecord { key, node_id })
     }
 
-    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+    fn export(&self, _source: &mut Write) -> std::io::Result<()> {
         Err(Error::new(ErrorKind::Other, "Unsupported operation"))
     }
 
@@ -343,7 +343,7 @@ impl Record<CatalogKey> for CatalogRecord {
         Ok(CatalogRecord { key, body })
     }
 
-    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+    fn export(&self, _source: &mut Write) -> std::io::Result<()> {
         Err(Error::new(ErrorKind::Other, "Unsupported operation"))
     }
 
@@ -517,12 +517,12 @@ impl<K: Key, R: Record<K>> Node<K, R> {
         let mut cursor = Cursor::new(data);
         Ok(match self {
             Node::LeafNode(x) => {
-                x.descriptor.export(&mut cursor);
+                x.descriptor.export(&mut cursor)?;
                 let mut positions = Vec::new();
                 for record in &x.records {
                     positions.push(cursor.position() as u16);
-                    record.get_key().export(&mut cursor);
-                    record.export(&mut cursor);
+                    record.get_key().export(&mut cursor)?;
+                    record.export(&mut cursor)?;
                 }
                 positions.push(cursor.position() as u16);
                 cursor.set_position(data_len - 2*positions.len() as u64);
@@ -942,7 +942,6 @@ impl<F: Read + Seek> HFSVolume<F> {
                 return Err(HFSError::InvalidRecordType);
             },
         };
-        let mut parent_id = parent.folderID;
         for i in &path {
             let val = i.to_str().unwrap();
             println!("{}", val);

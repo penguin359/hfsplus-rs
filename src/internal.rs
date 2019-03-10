@@ -1,7 +1,7 @@
 #![allow(non_snake_case, unused)]
 #![allow(non_upper_case_globals, unused_variables)]
+#![allow(unused)]  // TODO This needs to be removed once more code is ready
 
-//use std::io::{Cursor, Error, ErrorKind, Read, Seek};
 use std::io::{self, Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -12,8 +12,8 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 // HFS Plus Names
 //struct HFSUniStr255 {
-//        UInt16  length;
-//            UniChar unicode[255];
+//    UInt16  length;
+//    UniChar unicode[255];
 //};
 //typedef struct HFSUniStr255 HFSUniStr255;
 //typedef const  HFSUniStr255 *ConstHFSUniStr255Param;
@@ -65,23 +65,23 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Copy, Clone)]
 pub struct HFSPlusBSDInfo {
-    pub ownerID:	        u32,
-    pub groupID:	        u32,
-    pub adminFlags:	        u8,
-    pub ownerFlags:	        u8,
-    pub fileMode:	        u16,
-    pub special:	        u32,
+    pub ownerID:                u32,
+    pub groupID:                u32,
+    pub adminFlags:             u8,
+    pub ownerFlags:             u8,
+    pub fileMode:               u16,
+    pub special:                u32,
 }
 
 impl HFSPlusBSDInfo {
     fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            ownerID:	        source.read_u32::<BigEndian>()?,
-            groupID:	        source.read_u32::<BigEndian>()?,
-            adminFlags:	        source.read_u8()?,
-            ownerFlags:	        source.read_u8()?,
-            fileMode:	        source.read_u16::<BigEndian>()?,
-            special:	        source.read_u32::<BigEndian>()?,
+            ownerID:            source.read_u32::<BigEndian>()?,
+            groupID:            source.read_u32::<BigEndian>()?,
+            adminFlags:         source.read_u8()?,
+            ownerFlags:         source.read_u8()?,
+            fileMode:           source.read_u16::<BigEndian>()?,
+            special:            source.read_u32::<BigEndian>()?,
         })
     }
 }
@@ -135,36 +135,36 @@ pub const S_IFWHT:  u16 = 0o0160000;   /* whiteout */
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HFSPlusForkData {
-    pub logicalSize: u64,
-    pub clumpSize: u32,
-    pub totalBlocks: u32,
-    pub extents: HFSPlusExtentRecord,
+    pub logicalSize:            u64,
+    pub clumpSize:              u32,
+    pub totalBlocks:            u32,
+    pub extents:                HFSPlusExtentRecord,
 }
 
 pub type HFSPlusExtentRecord = [HFSPlusExtentDescriptor; 8];
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HFSPlusExtentDescriptor {
-    pub startBlock: u32,
-    pub blockCount: u32,
+    pub startBlock:             u32,
+    pub blockCount:             u32,
 }
 
 impl HFSPlusForkData {
     fn new() -> Self {
         Self {
-            logicalSize: 0,
-            clumpSize: 0,
-            totalBlocks: 0,
-            extents: new_record(),
+            logicalSize:        0,
+            clumpSize:          0,
+            totalBlocks:        0,
+            extents:            new_record(),
         }
     }
 
     fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            logicalSize: source.read_u64::<BigEndian>()?,
-            clumpSize: source.read_u32::<BigEndian>()?,
-            totalBlocks: source.read_u32::<BigEndian>()?,
-            extents: import_record(source)?,
+            logicalSize:        source.read_u64::<BigEndian>()?,
+            clumpSize:          source.read_u32::<BigEndian>()?,
+            totalBlocks:        source.read_u32::<BigEndian>()?,
+            extents:            import_record(source)?,
         })
     }
 
@@ -223,8 +223,8 @@ impl HFSPlusForkData {
 impl HFSPlusExtentDescriptor {
     fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            startBlock: source.read_u32::<BigEndian>()?,
-            blockCount: source.read_u32::<BigEndian>()?,
+            startBlock:         source.read_u32::<BigEndian>()?,
+            blockCount:         source.read_u32::<BigEndian>()?,
         })
     }
 
@@ -673,39 +673,39 @@ pub const kHFSPlusFileThreadRecord    : i16 = 0x0004;
 
 #[derive(Debug, Copy, Clone)]
 pub struct HFSPlusCatalogFolder {
-    //pub recordType:	        i16,
-    pub flags:	                u16,
-    pub valence:	        u32,
-    pub folderID:	        HFSCatalogNodeID,
-    pub createDate:	        u32,
+    //pub recordType:           i16,
+    pub flags:                  u16,
+    pub valence:                u32,
+    pub folderID:               HFSCatalogNodeID,
+    pub createDate:             u32,
     pub contentModDate:         u32,
     pub attributeModDate:       u32,
-    pub accessDate:	        u32,
-    pub backupDate:	        u32,
+    pub accessDate:             u32,
+    pub backupDate:             u32,
     pub permissions:            HFSPlusBSDInfo,
-    pub userInfo:	        FolderInfo,
-    pub finderInfo:	        ExtendedFolderInfo,
+    pub userInfo:               FolderInfo,
+    pub finderInfo:             ExtendedFolderInfo,
     pub textEncoding:           u32,
-    pub reserved:	        u32,
+    pub reserved:               u32,
 }
 
 impl HFSPlusCatalogFolder {
     pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            //recordType:	        source.read_i16::<BigEndian>()?,
-            flags:	        source.read_u16::<BigEndian>()?,
-            valence:	        source.read_u32::<BigEndian>()?,
-            folderID:	        source.read_u32::<BigEndian>()?,  // HFSCatalogNodeID
-            createDate:	        source.read_u32::<BigEndian>()?,
+            //recordType:         source.read_i16::<BigEndian>()?,
+            flags:              source.read_u16::<BigEndian>()?,
+            valence:            source.read_u32::<BigEndian>()?,
+            folderID:           source.read_u32::<BigEndian>()?,  // HFSCatalogNodeID
+            createDate:         source.read_u32::<BigEndian>()?,
             contentModDate:     source.read_u32::<BigEndian>()?,
             attributeModDate:   source.read_u32::<BigEndian>()?,
-            accessDate:	        source.read_u32::<BigEndian>()?,
-            backupDate:	        source.read_u32::<BigEndian>()?,
+            accessDate:         source.read_u32::<BigEndian>()?,
+            backupDate:         source.read_u32::<BigEndian>()?,
             permissions:        HFSPlusBSDInfo::import(source)?,
-            userInfo:	        FolderInfo::import(source)?,
-            finderInfo:	        ExtendedFolderInfo::import(source)?,
+            userInfo:           FolderInfo::import(source)?,
+            finderInfo:         ExtendedFolderInfo::import(source)?,
             textEncoding:       source.read_u32::<BigEndian>()?,
-            reserved:	        source.read_u32::<BigEndian>()?,
+            reserved:           source.read_u32::<BigEndian>()?,
         })
     }
 }
@@ -742,10 +742,10 @@ impl HFSPlusCatalogFolder {
 
 #[derive(Debug, Copy, Clone)]
 pub struct HFSPlusCatalogFile {
-    //pub recordType:	        i16,
-    pub flags:	                u16,
+    //pub recordType:             i16,
+    pub flags:                  u16,
     pub reserved1:              u32,
-    pub fileID:	                HFSCatalogNodeID,
+    pub fileID:                 HFSCatalogNodeID,
     pub createDate:             u32,
     pub contentModDate:         u32,
     pub attributeModDate:       u32,
@@ -764,8 +764,8 @@ pub struct HFSPlusCatalogFile {
 impl HFSPlusCatalogFile {
     pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            //recordType:	        source.read_i16::<BigEndian>()?,
-            flags:	        source.read_u16::<BigEndian>()?,
+            //recordType:         source.read_i16::<BigEndian>()?,
+            flags:              source.read_u16::<BigEndian>()?,
             reserved1:          source.read_u32::<BigEndian>()?,
             fileID:             source.read_u32::<BigEndian>()?,
             createDate:         source.read_u32::<BigEndian>()?,
@@ -806,15 +806,15 @@ impl HFSPlusCatalogFile {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Point {
-    pub v:	                i16,
-    pub h:	                i16,
+    pub v:                      i16,
+    pub h:                      i16,
 }
 
 impl Point {
     fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            v:	                source.read_i16::<BigEndian>()?,
-            h:	                source.read_i16::<BigEndian>()?,
+            v:                  source.read_i16::<BigEndian>()?,
+            h:                  source.read_i16::<BigEndian>()?,
         })
     }
 }
