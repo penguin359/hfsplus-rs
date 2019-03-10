@@ -581,6 +581,41 @@ impl BTHeaderRec {
             ],
         })
     }
+
+    pub fn export(&self, source: &mut Write) -> std::io::Result<()> {
+        source.write_u16::<BigEndian>(self.treeDepth)?;
+        source.write_u32::<BigEndian>(self.rootNode)?;
+        source.write_u32::<BigEndian>(self.leafRecords)?;
+        source.write_u32::<BigEndian>(self.firstLeafNode)?;
+        source.write_u32::<BigEndian>(self.lastLeafNode)?;
+        source.write_u16::<BigEndian>(self.nodeSize)?;
+        source.write_u16::<BigEndian>(self.maxKeyLength)?;
+        source.write_u32::<BigEndian>(self.totalNodes)?;
+        source.write_u32::<BigEndian>(self.freeNodes)?;
+        source.write_u16::<BigEndian>(self.reserved1)?;
+        source.write_u32::<BigEndian>(self.clumpSize)?;
+        source.write_u8(self.btreeType)?;
+        source.write_u8(self.keyCompareType)?;
+        source.write_u32::<BigEndian>(self.attributes)?;
+        source.write_u32::<BigEndian>(self.reserved3[0])?;
+        source.write_u32::<BigEndian>(self.reserved3[1])?;
+        source.write_u32::<BigEndian>(self.reserved3[2])?;
+        source.write_u32::<BigEndian>(self.reserved3[3])?;
+        source.write_u32::<BigEndian>(self.reserved3[4])?;
+        source.write_u32::<BigEndian>(self.reserved3[5])?;
+        source.write_u32::<BigEndian>(self.reserved3[6])?;
+        source.write_u32::<BigEndian>(self.reserved3[7])?;
+        source.write_u32::<BigEndian>(self.reserved3[8])?;
+        source.write_u32::<BigEndian>(self.reserved3[9])?;
+        source.write_u32::<BigEndian>(self.reserved3[10])?;
+        source.write_u32::<BigEndian>(self.reserved3[11])?;
+        source.write_u32::<BigEndian>(self.reserved3[12])?;
+        source.write_u32::<BigEndian>(self.reserved3[13])?;
+        source.write_u32::<BigEndian>(self.reserved3[14])?;
+        source.write_u32::<BigEndian>(self.reserved3[15])?;
+
+        Ok(())
+    }
 }
 
 

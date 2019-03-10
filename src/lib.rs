@@ -412,8 +412,8 @@ pub trait Key : fmt::Debug + Ord + PartialOrd + Eq + PartialEq {
 pub struct HeaderNode {
     pub descriptor: BTNodeDescriptor,
     pub header: BTHeaderRec,
-    _user_data: Vec<u8>,
-    _map: Vec<u8>,
+    user_data: Vec<u8>,
+    map: Vec<u8>,
 }
 
 pub struct MapNode {
@@ -475,8 +475,8 @@ impl<K: Key, R: Record<K>> Node<K, R> {
             Ok(Node::HeaderNode(HeaderNode {
                 descriptor: node,
                 header: BTHeaderRec::import(&mut records[0])?,
-                _user_data: Vec::new(),
-                _map: Vec::new(),
+                user_data: records[1].to_vec(),
+                map: records[2].to_vec(),
             }))
         } else if node.kind == kBTMapNode {
             Ok(Node::MapNode(MapNode {
@@ -515,23 +515,33 @@ impl<K: Key, R: Record<K>> Node<K, R> {
     fn save(&self, data: &mut [u8]) -> Result<(), HFSError> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
-        Ok(match self {
+        let mut positions = Vec::new();
+        match self {
+            Node::HeaderNode(x) => {
+                x.descriptor.export(&mut cursor)?;
+                positions.push(cursor.position() as u16);
+                x.header.export(&mut cursor)?;
+                positions.push(cursor.position() as u16);
+                cursor.write(&x.user_data)?;
+                positions.push(cursor.position() as u16);
+                cursor.write(&x.map)?;
+            },
             Node::LeafNode(x) => {
                 x.descriptor.export(&mut cursor)?;
-                let mut positions = Vec::new();
                 for record in &x.records {
                     positions.push(cursor.position() as u16);
                     record.get_key().export(&mut cursor)?;
                     record.export(&mut cursor)?;
                 }
-                positions.push(cursor.position() as u16);
-                cursor.set_position(data_len - 2*positions.len() as u64);
-                for position in positions.iter().rev() {
-                    cursor.write_u16::<BigEndian>(*position)?;
-                }
             },
             _ => { return Err(HFSError::UnsupportedOperation); },
-        })
+        };
+        positions.push(cursor.position() as u16);
+        cursor.set_position(data_len - 2*positions.len() as u64);
+        for position in positions.iter().rev() {
+            cursor.write_u16::<BigEndian>(*position)?;
+        }
+        Ok(())
     }
 }
 

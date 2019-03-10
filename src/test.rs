@@ -466,15 +466,79 @@ fn load_extents_leaf_node() {
 
 #[test]
 fn load_save_header_node() {
-    let mut _raw_data: Vec<u8> = vec![
+    let mut raw_data: Vec<u8> = vec![
         0, 0, 20, 7,            // fLink = 5127
-        0, 0, 2, 9,             // bLink = 521
-        kBTHeaderNode as u8,    // kind = leaf node
-        0,                      // height = 1
-        0, 3,                   // numRecords = 2
+        0, 0, 4, 0,             // bLink = 1024
+        kBTHeaderNode as u8,    // kind = header node
+        0,                      // height = 0
+        0, 3,                   // numRecords = 3
         0, 0,                   // reserved
     ];
-    //Node::LeafNode(leaf).save(&mut node_buffer[..]).expect("Unable to save extent node");
+
+    let header_node: [u8; 106] = [
+        0, 1,                   // treeDepth = 1
+        0, 0, 0, 0,             // rootNode = 
+        0, 0, 0, 0,             // leafRecords = 
+        0, 0, 0, 0,             // firstLeafNode = 
+        0, 0, 0, 0,             // lastLeafNode = 
+        0, 0,                   // nodeSize = 
+        0, 0,                   // maxKeyLength = 
+        0, 0, 0, 0,             // totalNodes = 
+        0, 0, 0, 0,             // freeNodes = 
+        0, 0,                   // reserved1 = 
+        0, 0, 0, 0,             // clumpSize = 
+        0,                      // btreeType = 
+        0,                      // keyCompareType = 
+        0, 0, 0, 0,             // attributes = 
+        0, 0, 0, 0,             // reserved3[16]
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ];
+    // Generate random data for the user data record in the header node
+    let mut user_data_buffer = [0u8; 128];
+    thread_rng().fill(&mut user_data_buffer);
+    let map_node = [0u8; 256];
+    raw_data.extend(header_node.iter());
+    raw_data.extend(user_data_buffer.iter());
+    raw_data.extend(map_node.iter());
+    // First record always starts at offset 14
+    // The Header record is always 106 bytes in length
+    // The User Data is always 128 bytes
+    // 4 16-bit record pointers are needed at the end (one for next free location)
+    // Making the Map Record 256 bytes rounds out the node to 512 bytes
+    raw_data.write_u16::<BigEndian>(14+106+128+256).unwrap();
+    raw_data.write_u16::<BigEndian>(14+106+128).unwrap();
+    raw_data.write_u16::<BigEndian>(14+106).unwrap();
+    raw_data.write_u16::<BigEndian>(14).unwrap();
+    assert_eq!(raw_data.len(), 512);
+    let node = Node::<CatalogKey, CatalogRecord>::load(&raw_data).expect("Unable to load header node");
+    let header = match node {
+        Node::HeaderNode(x) => x,
+        _ => { panic!("Wrong node type"); },
+    };
+    assert_eq!(header.descriptor.fLink, 5127);
+    assert_eq!(header.descriptor.bLink, 1024);
+    assert_eq!(header.descriptor.height, 0);
+    assert_eq!(header.descriptor.numRecords, 3);
+    assert_eq!(&header.user_data[..], &user_data_buffer[..]);
+    assert_eq!(&header.map[..], &map_node[..]);
+
+    let mut node_buffer = [0u8; 512];
+    Node::HeaderNode::<CatalogKey, CatalogRecord>(header).save(&mut node_buffer[..]).expect("Unable to save header node");
+    assert_eq!(&node_buffer.to_vec(), &raw_data);
 }
 
 #[test]
