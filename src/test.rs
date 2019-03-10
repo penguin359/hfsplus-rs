@@ -394,6 +394,70 @@ fn test_extent_key_sort_order() {
 }
 
 #[test]
+fn load_extents_leaf_node() {
+    let mut raw_data: Vec<u8> = vec![
+        0, 1, 0, 4,         // fLink = 65540
+        0, 0, 2, 9,         // bLink = 521
+        kBTLeafNode as u8,  // kind = leaf node
+        1,	            // height = 1
+        0, 2,	            // numRecords = 2
+        0, 0,	            // reserved
+    ];
+    let extents1_key = ExtentKey::new(59, 0x00, 87);
+    let extents1 = [
+        HFSPlusExtentDescriptor { startBlock: 2, blockCount: 6, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+    ];
+    let extents2_key = ExtentKey::new(59, 0x00, 145);
+    let extents2 = [
+        HFSPlusExtentDescriptor { startBlock: 9, blockCount: 6, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+        HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
+    ];
+    let extents1_pos = raw_data.len() as u16;
+    extents1_key.export(&mut raw_data);
+    export_record(&extents1, &mut raw_data).unwrap();
+    let extents2_pos = raw_data.len() as u16;
+    extents2_key.export(&mut raw_data);
+    export_record(&extents2, &mut raw_data).unwrap();
+    let free_pos = raw_data.len() as u16;
+    raw_data.resize(512 - 2*3, 0);
+    raw_data.write_u16::<BigEndian>(free_pos).unwrap();
+    raw_data.write_u16::<BigEndian>(extents2_pos).unwrap();
+    raw_data.write_u16::<BigEndian>(extents1_pos).unwrap();
+    assert_eq!(raw_data.len(), 512);
+
+    let node = Node::<ExtentKey, ExtentRecord>::load(&raw_data)
+        .expect("Fail to load extent leaf node");
+
+    let leaf = match node {
+        Node::LeafNode(x) => x,
+        _ => { panic!("Node is not a leaf"); },
+    };
+    assert_eq!(leaf.descriptor.fLink, 65540);
+    assert_eq!(leaf.descriptor.bLink, 521);
+    assert_eq!(leaf.descriptor.height, 1);
+    assert_eq!(leaf.descriptor.numRecords, 2);
+    assert_eq!(leaf.records.len(), 2);
+
+    assert_eq!(leaf.records[0].get_key(), &extents1_key);
+    assert_eq!(&leaf.records[0].body, &extents1);
+    assert_eq!(leaf.records[1].get_key(), &extents2_key);
+    assert_eq!(&leaf.records[1].body, &extents2);
+}
+
+#[test]
 fn test_bad_fork_data() {
     let fork_data = HFSPlusForkData {
         logicalSize: 32768,
