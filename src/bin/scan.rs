@@ -12,7 +12,7 @@ fn main() -> std::io::Result<()> {
     let volume = HFSVolume::load_file(filename.as_ref()).expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
     if path.is_none() {
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     println!("{} -> {}", btree.header.header.firstLeafNode, btree.header.header.lastLeafNode);
     let mut node_num = btree.header.header.firstLeafNode;
     while node_num != 0 {
@@ -75,7 +75,7 @@ fn main() -> std::io::Result<()> {
             },
             CatalogBody::File(body) => {
                 println!("Found a file!");
-                let data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
+                let mut data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
                 let data = data_fork.read_all().unwrap();
                 let contents = std::str::from_utf8(data.as_ref()).unwrap();
                 println!("Contents: {}", contents);

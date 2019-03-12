@@ -1,8 +1,9 @@
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::cell::RefCell;
 use std::fs::File;
 //use std::io::{Read, Write, Seek};
-use std::io::{Cursor, Error, ErrorKind, Read, Seek, Write};
+use std::io::prelude::*;
+use std::io::{self, Cursor, Error, ErrorKind, SeekFrom};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
@@ -259,9 +260,9 @@ impl Eq for ExtentKey {
 }
 
 pub trait Record<K> {
-    fn import(source: &mut Read, key: K) -> std::io::Result<Self>
+    fn import(source: &mut Read, key: K) -> io::Result<Self>
         where Self: Sized;
-    fn export(&self, source: &mut Write) -> std::io::Result<()>;
+    fn export(&self, source: &mut Write) -> io::Result<()>;
     fn get_key(&self) -> &K;
 }
 
@@ -277,7 +278,7 @@ impl<K> Record<K> for IndexRecord<K> {
     }
 
     fn export(&self, _source: &mut Write) -> std::io::Result<()> {
-        Err(Error::new(ErrorKind::Other, "Unsupported operation"))
+        Err(io::Error::new(ErrorKind::Other, "Unsupported operation"))
     }
 
     fn get_key(&self) -> &K {
@@ -337,14 +338,14 @@ impl Record<CatalogKey> for CatalogRecord {
             },
             _ => {
                 //return Err(HFSError::InvalidRecordType);
-                return Err(Error::new(ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
+                return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
             },
         };
         Ok(CatalogRecord { key, body })
     }
 
     fn export(&self, _source: &mut Write) -> std::io::Result<()> {
-        Err(Error::new(ErrorKind::Other, "Unsupported operation"))
+        Err(io::Error::new(ErrorKind::Other, "Unsupported operation"))
     }
 
     fn get_key(&self) -> &CatalogKey {
@@ -378,15 +379,15 @@ impl Record<ExtentKey> for ExtentRecord {
 #[derive(Debug)]
 pub enum HFSError {
     InvalidData(String),
-    IOError(Error),
+    IOError(io::Error),
     BadNode,
     InvalidRecordKey,
     InvalidRecordType,
     UnsupportedOperation,
 }
 
-impl From<Error> for HFSError {
-    fn from(x: Error) -> HFSError {
+impl From<io::Error> for HFSError {
+    fn from(x: io::Error) -> HFSError {
         HFSError::IOError(x)
     }
 }
@@ -547,7 +548,7 @@ impl<K: Key, R: Record<K>> Node<K, R> {
 
 
 pub struct BTree<F: Read + Seek, K, R> {
-    fork: Rc<RefCell<Fork<F>>>,
+    fork: F,
     node_size: u16,
     pub header: HeaderNode,
     _key: PhantomData<K>,
@@ -555,14 +556,13 @@ pub struct BTree<F: Read + Seek, K, R> {
 }
 
 impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
-    fn open(fork_rc: ForkRc<F>) -> Result<BTree<F, K, R>, HFSError> {
+    fn open(mut fork: F) -> Result<BTree<F, K, R>, HFSError> {
         let node_size;
         let header;
-        {
-        let fork = fork_rc.borrow_mut();
         //let node_size = 0;
         let mut buffer = vec![0; 512];
-        fork.read(0, &mut buffer).expect("Failed to read from fork");
+        fork.seek(SeekFrom::Start(0))?;
+        fork.read_exact(&mut buffer).expect("Failed to read from fork");
         //let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
         //assert_eq!(node.kind, kBTHeaderNode);
         //assert_eq!(node.bLink, 0);
@@ -573,7 +573,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         for _ in 0..remaining {
             buffer.push(0);
         }
-        fork.read(512, &mut buffer[512..]).expect("Failed to read from fork");
+        fork.read_exact(&mut buffer[512..]).expect("Failed to read from fork");
         let header_node = Node::<K, R>::load(&buffer)?;
         header = match header_node {
             Node::HeaderNode(x) => {
@@ -584,7 +584,6 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                 return Err(HFSError::BadNode);
             },
         };
-        }
         // XXX Verify size >= 512
         //
         //println!("{}", node_size);
@@ -595,7 +594,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         //let node_size = (&header_node[32..34]).read_u16::<BigEndian>()?;
         //println!("{}", node_size);
         Ok(BTree {
-            fork: fork_rc,
+            fork,
             node_size,
             header,
             _key: PhantomData,
@@ -603,11 +602,11 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         })
     }
 
-    pub fn get_node(&self, node_num: usize) -> HFSResult<Node<K, R>> {
+    pub fn get_node(&mut self, node_num: usize) -> HFSResult<Node<K, R>> {
         {
-        let fork = self.fork.borrow_mut();
         let mut buffer = vec![0; self.node_size as usize];
-        fork.read((node_num*self.node_size as usize) as u64, &mut buffer).expect("Failed to read from fork");
+        self.fork.seek(SeekFrom::Start((node_num*self.node_size as usize) as u64))?;
+        self.fork.read(&mut buffer).expect("Failed to read from fork");
         let node = Node::<K, R>::load(&buffer)?;
         //header = match header_node {
         //    Node::HeaderNode(x) => {
@@ -622,7 +621,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         }
     }
 
-    fn get_record_range_node(&self, first: &K, last: &K, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range_node(&mut self, first: &K, last: &K, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
@@ -672,7 +671,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         }
     }
 
-    fn get_record_node(&self, key: &K, node_id: usize) -> HFSResult<Rc<R>> {
+    fn get_record_node(&mut self, key: &K, node_id: usize) -> HFSResult<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
@@ -706,11 +705,11 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         }
     }
 
-    fn get_record(&self, key: &K) -> HFSResult<Rc<R>> {
+    fn get_record(&mut self, key: &K) -> HFSResult<Rc<R>> {
         self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 
-    fn get_record_range(&self, first: &K, last: &K) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range(&mut self, first: &K, last: &K) -> HFSResult<Vec<Rc<R>>> {
         self.get_record_range_node(first, last, self.header.header.rootNode as usize)
     }
 }
@@ -728,6 +727,7 @@ pub use internal::*;
 
 pub struct Fork<F: Read + Seek> {
     file: Rc<RefCell<F>>,
+    position: u64,
     volume: Rc<RefCell<HFSVolume<F>>>,
     logical_size: u64,
     extents: Vec<(u32, u32, u64, u64)>,
@@ -749,7 +749,7 @@ impl<F: Read + Seek> Fork<F> {
             extents.push((extent.startBlock, extent.blockCount, extent_position, extent_end));
             extent_position += extent_size;
         }
-        Ok(Fork { file, volume, logical_size: data.logicalSize, extents })
+        Ok(Fork { file, position: 0, volume, logical_size: data.logicalSize, extents })
     }
 
     fn check(&self) -> std::io::Result<()> {
@@ -761,7 +761,86 @@ impl<F: Read + Seek> Fork<F> {
         Ok(())
     }
 
-    fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
+    //fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
+    //    let volume = self.volume.borrow();
+    //    let mut file = self.file.borrow_mut();
+    //    let block_size = volume.header.blockSize as u64;
+    //    //let mut block = offset / volume.header.blockSize as u64;
+    //    //let mut block_offset = offset % volume.header.blockSize as u64;
+    //    //let mut buffer_offset = 0;
+    //    //let mut bytes_remaining = buffer.len() as u64;
+    //    //let mut extent_block = 0;
+    //    let mut bytes_read = 0;
+    //    for extent in &self.extents {
+    //        println!("{:?}", extent);
+    //        let (start_block, _, extent_begin, extent_end) = *extent;
+    //        println!("{} - {} - {}", start_block, extent_begin, extent_end);
+    //        let extent_length = extent_end - extent_begin;
+    //        if offset >= extent_end {
+    //            continue;
+    //        }
+    //        //if (offset + bytes_read as u64) < extent_begin {
+    //        //    break;
+    //        //}
+    //        let extent_offset = if offset > extent_begin {
+    //            offset - extent_begin  // Partial first extent
+    //        } else {
+    //            0
+    //        };
+    //        file.seek(SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
+    //        let bytes_remaining = buffer.len() - bytes_read;
+    //        let bytes_to_read = std::cmp::min(extent_length, bytes_remaining as u64);
+    //        file.read_exact(&mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
+    //        bytes_read += bytes_to_read as usize;
+    //        if bytes_read >= buffer.len() {
+    //            println!("All bytes read");
+    //            break;
+    //        }
+
+    //        //let last_block = (extent_block + extent.1) as u64;
+    //        //let extent_bytes = extent.1 as u64 * volume.header.blockSize as u64;
+    //        //if block < last_block {
+    //        //    file.seek(SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
+    //        //    block = 0;
+    //        //    block_offset = 0;
+    //        //    let bytes_to_read = std::cmp::min(extent_bytes, bytes_remaining);
+    //        //    file.read_exact(&mut buffer[buffer_offset as usize..bytes_to_read as usize])?;
+    //        //    bytes_remaining -= bytes_to_read;
+    //        //    buffer_offset += bytes_to_read;
+    //        //}
+    //        //if bytes_remaining <= 0 {
+    //        //    break;
+    //        //}
+    //    }
+    //    println!("Start: {}", self.extents[0].0 as u64);
+    //    //file.seek(SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
+    //    println!("Fork read: {}", buffer.len());
+    //    println!("Bytes read: {}", bytes_read);
+    //    //file.read_exact(buffer)?;
+    //    // TODO This should return a byte count and happily accept
+    //    // a short read, but for now, treat as read_exact()
+    //    if bytes_read < buffer.len() {
+    //        Err(Error::new(ErrorKind::UnexpectedEof, "No more extents to read"))
+    //    } else {
+    //        Ok(())
+    //    }
+    //}
+
+    pub fn read_all(&mut self) -> std::io::Result<Vec<u8>> {
+        let mut buffer = vec![0; self.logical_size as usize];
+        self.seek(SeekFrom::Start(0))?;
+        self.read(buffer.as_mut_slice())?;
+        Ok(buffer)
+    }
+
+    fn len(&self) -> u64 {
+        self.logical_size
+    }
+}
+
+impl<F: Read + Seek> Read for Fork<F> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let offset = self.position;
         let volume = self.volume.borrow();
         let mut file = self.file.borrow_mut();
         let block_size = volume.header.blockSize as u64;
@@ -787,7 +866,7 @@ impl<F: Read + Seek> Fork<F> {
             } else {
                 0
             };
-            file.seek(std::io::SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
+            file.seek(SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
             let bytes_remaining = buffer.len() - bytes_read;
             let bytes_to_read = std::cmp::min(extent_length, bytes_remaining as u64);
             file.read_exact(&mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
@@ -800,7 +879,7 @@ impl<F: Read + Seek> Fork<F> {
             //let last_block = (extent_block + extent.1) as u64;
             //let extent_bytes = extent.1 as u64 * volume.header.blockSize as u64;
             //if block < last_block {
-            //    file.seek(std::io::SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
+            //    file.seek(SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
             //    block = 0;
             //    block_offset = 0;
             //    let bytes_to_read = std::cmp::min(extent_bytes, bytes_remaining);
@@ -813,7 +892,7 @@ impl<F: Read + Seek> Fork<F> {
             //}
         }
         println!("Start: {}", self.extents[0].0 as u64);
-        //file.seek(std::io::SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
+        //file.seek(SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
         println!("Fork read: {}", buffer.len());
         println!("Bytes read: {}", bytes_read);
         //file.read_exact(buffer)?;
@@ -822,18 +901,22 @@ impl<F: Read + Seek> Fork<F> {
         if bytes_read < buffer.len() {
             Err(Error::new(ErrorKind::UnexpectedEof, "No more extents to read"))
         } else {
-            Ok(())
+            self.position += bytes_read as u64;
+            Ok(bytes_read)
         }
     }
+}
 
-    pub fn read_all(&self) -> std::io::Result<Vec<u8>> {
-        let mut buffer = vec![0; self.logical_size as usize];
-        self.read(0, buffer.as_mut_slice())?;
-        Ok(buffer)
-    }
-
-    fn len(&self) -> u64 {
-        self.logical_size
+impl<F: Read + Seek> Seek for Fork<F> {
+    // TODO Check limits and verify offset is valid
+    // Needs test to show it will fail
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_position = match pos {
+            SeekFrom::Start(x) => x,
+            _ => { return Err(io::Error::new(ErrorKind::Other, "Unsupported operation")); },
+        };
+        self.position = new_position;
+        Ok(new_position)
     }
 }
 
@@ -842,16 +925,14 @@ type ForkRc<F> = Rc<RefCell<Fork<F>>>;
 pub struct HFSVolume<F: Read + Seek> {
     pub file: Rc<RefCell<F>>,
     header: HFSPlusVolumeHeader,
-    catalog_fork: Weak<RefCell<Fork<F>>>,
-    extents_fork: Weak<RefCell<Fork<F>>>,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
-    pub catalog_btree: Option<BTreeRc<F, CatalogKey, CatalogRecord>>,
-    extents_btree: Option<BTreeRc<F, CatalogKey, CatalogRecord>>,
+    pub catalog_btree: Option<BTreeRc<Fork<F>, CatalogKey, CatalogRecord>>,
+    pub extents_btree: Option<BTreeRc<Fork<F>, CatalogKey, CatalogRecord>>,
 }
 
 impl<F: Read + Seek> HFSVolume<F> {
     pub fn load(mut file: F) -> std::io::Result<Rc<RefCell<HFSVolume<F>>>> {
-        file.seek(std::io::SeekFrom::Start(1024))?;
+        file.seek(SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let _hfsx_volume = match header.signature {
             HFSP_SIGNATURE => {
@@ -882,25 +963,19 @@ impl<F: Read + Seek> HFSVolume<F> {
         let volume = Rc::new(RefCell::new(HFSVolume {
             file,
             header,
-            catalog_fork: Weak::new(),
-            extents_fork: Weak::new(),
             forks: HashMap::new(),
             catalog_btree: None,
             extents_btree: None,
         }));
-        let catalog_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile)?));
-        let extents_fork = Rc::new(RefCell::new(Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile)?));
-        volume.borrow_mut().catalog_fork = Rc::downgrade(&catalog_fork);
-        volume.borrow_mut().extents_fork = Rc::downgrade(&extents_fork);
-        volume.borrow_mut().forks.insert(kHFSCatalogFileID, Rc::clone(&catalog_fork));
-        volume.borrow_mut().forks.insert(kHFSExtentsFileID, Rc::clone(&extents_fork));
+        let catalog_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile)?;
+        let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile)?;
         volume.borrow_mut().catalog_btree = Some(Rc::new(RefCell::new(BTree::open(catalog_fork)?)));
         volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork)?)));
         Ok(volume)
     }
 
     pub fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
-        let btree = self.catalog_btree.as_ref().unwrap().borrow();
+        let mut btree = self.catalog_btree.as_ref().expect("Can't unwrap").borrow_mut();
         let first = CatalogKey { _case_match: false, parent_id: node_id, node_name: HFSString::from("") };
         let last = CatalogKey { _case_match: false, parent_id: node_id+1, node_name: HFSString::from("") };
         //match btree.get_record_range(&first, &last) {
@@ -923,18 +998,24 @@ impl<F: Read + Seek> HFSVolume<F> {
     }
 
     fn get_children(&self, key: &CatalogKey) -> HFSResult<Vec<Rc<CatalogRecord>>> {
-        let btree = self.catalog_btree.as_ref().unwrap().borrow();
-        match &btree.get_record(key)?.body {
+        let record = {
+            let mut btree = self.catalog_btree.as_ref().unwrap().borrow_mut();
+            btree.get_record(key)?
+        };
+        match &record.body {
             CatalogBody::Folder(x) => self.get_children_id(x.folderID),
             _ => Err(HFSError::InvalidRecordKey)
         }
     }
 
+    fn get_catalog(&self) -> std::cell::RefMut<BTree<Fork<F>, CatalogKey, CatalogRecord>> {
+        self.catalog_btree.as_ref().unwrap().borrow_mut()
+    }
+
     pub fn get_path_record(&self, filename: &str) -> HFSResult<CatalogBody> {
         let path = PathBuf::from(filename);
-        let btree = self.catalog_btree.as_ref().unwrap().borrow();
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-        let result = btree.get_record(&root_thread_key)?;
+        let result = self.get_catalog().get_record(&root_thread_key)?;
         let thread = match result.body {
             CatalogBody::FolderThread(ref x) => {
                 x
@@ -943,7 +1024,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 return Err(HFSError::InvalidRecordType);
             },
         };
-        let result = btree.get_record(thread)?;
+        let result = self.get_catalog().get_record(thread)?;
         let mut parent = match result.body {
             CatalogBody::Folder(x) => {
                 x
@@ -960,7 +1041,7 @@ impl<F: Read + Seek> HFSVolume<F> {
             }
             let parent_id = parent.folderID;
             let child_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString::from(val) };
-            let result = btree.get_record(&child_key)?;
+            let result = self.get_catalog().get_record(&child_key)?;
             parent = match result.body {
                 CatalogBody::Folder(x) => {
                     x
@@ -978,9 +1059,8 @@ impl<F: Read + Seek> HFSVolume<F> {
 
     pub fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {
         let path = PathBuf::from(filename);
-        let btree = self.catalog_btree.as_ref().unwrap().borrow();
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-        let result = btree.get_record(&root_thread_key)?;
+        let result = self.get_catalog().get_record(&root_thread_key)?;
         let thread = match result.body {
             CatalogBody::FolderThread(ref x) => {
                 x
@@ -989,7 +1069,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 return Err(HFSError::InvalidRecordType);
             },
         };
-        let result = btree.get_record(thread)?;
+        let result = self.get_catalog().get_record(thread)?;
         let parent = match result.body {
             CatalogBody::Folder(ref x) => {
                 x
@@ -1006,7 +1086,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 continue;
             }
             let child_key = CatalogKey { _case_match: false, parent_id, node_name: HFSString::from(val) };
-            let result = btree.get_record(&child_key)?;
+            let result = self.get_catalog().get_record(&child_key)?;
             let parent = match result.body {
                 CatalogBody::Folder(ref x) => {
                     x

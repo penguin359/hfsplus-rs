@@ -563,13 +563,11 @@ fn test_bad_fork_data() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::clone(&file),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
+    let mut fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_err(), "Errors in fork data not detected in check");
 }
 
@@ -595,13 +593,11 @@ fn test_good_fork_data() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::clone(&file),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
+    let mut fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_ok(), "Errors found in fork data");
 }
 
@@ -658,15 +654,14 @@ fn load_fragmented_fork_data() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 33];
-    fork.read(0, buffer.as_mut()).unwrap();
+    fork.seek(std::io::SeekFrom::Start(0)).unwrap();
+    fork.read(buffer.as_mut()).unwrap();
     //println!("Buffer: {:?}", buffer.to_vec());
     let expected: Vec<u8> = "Hello, World!\nWhat is your name?\n".bytes().collect();
     println!("Expected:");
@@ -872,15 +867,14 @@ fn load_fragmented_fork_data_with_overflow() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 256];
-    fork.read(0, buffer.as_mut()).unwrap();
+    fork.seek(std::io::SeekFrom::Start(0)).unwrap();
+    fork.read(buffer.as_mut()).unwrap();
     //println!("Buffer: {:?}", buffer.to_vec());
     println!("Expected:");
     for row in 0..(expected.len()+16-1) / 16 {
@@ -936,15 +930,14 @@ fn load_beyond_end_of_fork_extents() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 37];  // Note, this is one more byte than in fork extents
-    let result = fork.read(0, buffer.as_mut());
+    fork.seek(SeekFrom::Start(0)).unwrap();
+    let result = fork.read(buffer.as_mut());
     assert!(result.is_err(), "Failed to trigger error in read()");
 }
 
@@ -968,42 +961,43 @@ fn load_beyond_end_of_fork_data() {
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
         header,
-        catalog_fork: Weak::new(),
-        extents_fork: Weak::new(),
         forks: HashMap::new(),
         catalog_btree: None,
         extents_btree: None,
     }));
-    let fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 34];  // Note, this is one more byte than in fork data
                                  // but still resides inside fork extent
-    let result = fork.read(0, buffer.as_mut());
+    fork.seek(SeekFrom::Start(0)).unwrap();
+    let result = fork.read(buffer.as_mut());
     assert!(result.is_err(), "Failed to trigger error in read()");
 }
 
-#[test]
-fn load_blank_volume_catalog_fork() {
-    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
-    assert!(volume.borrow().catalog_fork.upgrade().is_some(), "Invalid catalog fork pointer");
-    assert!(volume.borrow().extents_fork.upgrade().is_some(), "Invalid extents fork pointer");
-    let vol = volume.borrow();
-    let vol2 = vol.catalog_fork.upgrade().unwrap();
-    let fork = vol2.borrow();
-    assert_eq!(fork.len(), 32768);
-    assert_eq!(volume.borrow().extents_fork.upgrade().unwrap().borrow().len(), 32768);
-    //let mut buffer = vec![0; 512];
-    let mut buffer = vec![0; 512];
-    fork.read(0, &mut buffer).expect("Failed to read from fork");
-    //let node = BTNodeDescriptor::import(&mut Cursor::new(&mut buffer)).unwrap();
-    let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
-    assert_eq!(node.kind, kBTHeaderNode);
-    assert_eq!(node.bLink, 0);
-    assert_eq!(node.numRecords, 3);
-    assert_eq!(node.reserved, 0);
-    let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
-    println!("{}", node_size);
-    assert_eq!(node_size, 4096);
-}
+//#[test]
+//fn load_blank_volume_catalog_fork() {
+//    let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
+//    assert!(volume.borrow().catalog_btree.is_some(), "Invalid catalog fork pointer");
+//    assert!(volume.borrow().extents_btree.is_some(), "Invalid extents fork pointer");
+//    let vol = volume.borrow();
+//    let mut catalog_btree = vol.catalog_btree.unwrap().borrow_mut();
+//    let fork = catalog_btree.fork;
+//    assert_eq!(fork.len(), 32768);
+//    let mut extents_btree = vol.extents_btree.unwrap().borrow_mut();
+//    let extents_fork = extents_btree.fork;
+//    assert_eq!(extents_fork.len(), 32768);
+//    //let mut buffer = vec![0; 512];
+//    let mut buffer = vec![0; 512];
+//    fork.read(0, &mut buffer).expect("Failed to read from fork");
+//    //let node = BTNodeDescriptor::import(&mut Cursor::new(&mut buffer)).unwrap();
+//    let node = BTNodeDescriptor::import(&mut &buffer[..]).unwrap();
+//    assert_eq!(node.kind, kBTHeaderNode);
+//    assert_eq!(node.bLink, 0);
+//    assert_eq!(node.numRecords, 3);
+//    assert_eq!(node.reserved, 0);
+//    let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
+//    println!("{}", node_size);
+//    assert_eq!(node_size, 4096);
+//}
 
 #[test]
 fn load_blank_volume_catalog_btree() {
@@ -1148,12 +1142,20 @@ fn compare_catalog_keys() {
 fn check_blank_hfs_btree() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_node = {
+        let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+        let tree_header = &btree.header.header;
+        assert_eq!(tree_header.rootNode, 1);
+        assert_eq!(tree_header.firstLeafNode, 1);
+        assert_eq!(tree_header.lastLeafNode, 1);
+        tree_header.rootNode
+    };
+    let node = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_node(root_node as usize)
+    };
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let tree_header = &btree.header.header;
-    assert_eq!(tree_header.rootNode, 1);
-    assert_eq!(tree_header.firstLeafNode, 1);
-    assert_eq!(tree_header.lastLeafNode, 1);
-    let node = btree.get_node(tree_header.rootNode as usize);
     if node.is_err() {
         println!("{:?}", node.as_ref().err().unwrap());
     }
@@ -1176,15 +1178,23 @@ fn check_blank_hfs_btree() {
 fn check_small_hfs_btree() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let root_node = {
+        let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+        let tree_header = &btree.header.header;
+        assert_eq!(tree_header.treeDepth, 2);
+        // Multiple leaf nodes are requires so all values
+        // must be different
+        assert_ne!(tree_header.rootNode, tree_header.firstLeafNode);
+        assert_ne!(tree_header.rootNode, tree_header.lastLeafNode);
+        assert_ne!(tree_header.firstLeafNode, tree_header.lastLeafNode);
+        tree_header.rootNode
+    };
+    let node = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_node(root_node as usize)
+    };
+    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let tree_header = &btree.header.header;
-    assert_eq!(tree_header.treeDepth, 2);
-    // Multiple leaf nodes are requires so all values
-    // must be different
-    assert_ne!(tree_header.rootNode, tree_header.firstLeafNode);
-    assert_ne!(tree_header.rootNode, tree_header.lastLeafNode);
-    assert_ne!(tree_header.firstLeafNode, tree_header.lastLeafNode);
-    let node = btree.get_node(tree_header.rootNode as usize);
     if node.is_err() {
         println!("{:?}", node.as_ref().err().unwrap());
     }
@@ -1207,7 +1217,7 @@ fn check_small_hfs_btree() {
 fn load_root_thread_record() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(&root_thread_key);
     assert!(thread_record_res.is_ok(), "Failed to find root thread record");
@@ -1245,7 +1255,7 @@ fn load_root_thread_record() {
 fn load_root_folder_record() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let thread_record_res = btree.get_record(&root_thread_key);
     if thread_record_res.is_err() {
@@ -1282,9 +1292,11 @@ fn load_root_folder_record() {
 fn load_blank_root_folder_listing() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-    let thread_record_res = btree.get_record(&root_thread_key);
+    let thread_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(&root_thread_key)
+    };
     if thread_record_res.is_err() {
         println!("{:?}", thread_record_res.as_ref().err().unwrap());
     }
@@ -1298,7 +1310,10 @@ fn load_blank_root_folder_listing() {
             assert!(false, "Not a folder thread record"); return;
         },
     };
-    let root_record_res = btree.get_record(thread);
+    let root_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(thread)
+    };
     if root_record_res.is_err() {
         println!("{:?}", root_record_res.as_ref().err().unwrap());
     }
@@ -1325,9 +1340,11 @@ fn load_blank_root_folder_listing() {
 fn load_small_root_folder_listing() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-    let thread_record_res = btree.get_record(&root_thread_key);
+    let thread_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(&root_thread_key)
+    };
     if thread_record_res.is_err() {
         println!("{:?}", thread_record_res.as_ref().err().unwrap());
     }
@@ -1341,7 +1358,10 @@ fn load_small_root_folder_listing() {
             assert!(false, "Not a folder thread record"); return;
         },
     };
-    let root_record_res = btree.get_record(thread);
+    let root_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(thread)
+    };
     if root_record_res.is_err() {
         println!("{:?}", root_record_res.as_ref().err().unwrap());
     }
@@ -1380,7 +1400,7 @@ fn load_small_root_folder_listing() {
 fn test_btree_get_record_range_blank() {
     let volume = HFSVolume::load_file("hfsp-blank.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let tree_header = &btree.header.header;
     assert_eq!(tree_header.treeDepth, 1);  // This test expects only leaf nodes
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
@@ -1450,7 +1470,7 @@ fn test_btree_get_record_range_blank() {
 fn test_btree_get_record_range_small() {
     let volume = HFSVolume::load_file("hfsp-small.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let tree_header = &btree.header.header;
     assert_eq!(tree_header.treeDepth, 2);  // This test expects index nodes
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
@@ -1521,11 +1541,16 @@ fn test_btree_get_record_range_small() {
 fn test_btree_get_record_range_many() {
     let volume = HFSVolume::load_file("hfsp-many2.img").expect("Failed to read Volume Header");
     let vol2 = volume.borrow();
-    let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
-    let tree_header = &btree.header.header;
-    assert_eq!(tree_header.treeDepth, 3);  // This test expects index nodes
+    {
+        let btree = vol2.catalog_btree.as_ref().unwrap().borrow();
+        let tree_header = &btree.header.header;
+        assert_eq!(tree_header.treeDepth, 3);  // This test expects index nodes
+    }
     let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
-    let thread_record_res = btree.get_record(&root_thread_key);
+    let thread_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(&root_thread_key)
+    };
     if thread_record_res.is_err() {
         println!("{:?}", thread_record_res.as_ref().err().unwrap());
     }
@@ -1539,7 +1564,10 @@ fn test_btree_get_record_range_many() {
             assert!(false, "Not a folder thread record"); return;
         },
     };
-    let root_record_res = btree.get_record(thread);
+    let root_record_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record(thread)
+    };
     if root_record_res.is_err() {
         println!("{:?}", root_record_res.as_ref().err().unwrap());
     }
@@ -1556,7 +1584,10 @@ fn test_btree_get_record_range_many() {
 
     let first = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
     let last = CatalogKey { _case_match: false, parent_id: 5, node_name: HFSString::from("") };
-    let records_res = btree.get_record_range(&first, &last);
+    let records_res = {
+        let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
+        btree.get_record_range(&first, &last)
+    };
     assert!(records_res.is_ok(), "Failed to get record range");
     let records = records_res.unwrap();
     assert!(records.len() > 0);
@@ -1567,6 +1598,7 @@ fn test_btree_get_record_range_many() {
 
     let first = CatalogKey { _case_match: false, parent_id: 1, node_name: HFSString::from("") };
     let last = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
+    let mut btree = vol2.catalog_btree.as_ref().unwrap().borrow_mut();
     let records_res = btree.get_record_range(&first, &last);
     assert!(records_res.is_ok(), "Failed to get record range");
     let records = records_res.unwrap();
