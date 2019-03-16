@@ -8,6 +8,8 @@ use std::fs::File;
 use std::path::Path;
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::symlink;
+use std::os::unix::fs::PermissionsExt;
+use std::fs::set_permissions;
 
 use hfsplus::*;
 
@@ -47,14 +49,14 @@ fn extract<P: AsRef<Path>>(vol2: &Ref<HFSVolume<File>>, volume: Rc<RefCell<HFSVo
                     println!("Saving contents to {:?}", local_file_path);
                     let mut local_file = OpenOptions::new().write(true)
                                                            .create_new(true)
-                                                           .open(local_file_path)?;
+                                                           .open(&local_file_path)?;
                     println!("Saving...");
                     local_file.write(&data[..])?;
                     println!("Done.");
                 },
                 S_IFLNK => {
                     println!("Found a symlink!");
-                    symlink(std::str::from_utf8(&data).unwrap(), local_file_path)?;
+                    symlink(std::str::from_utf8(&data).unwrap(), &local_file_path)?;
                 },
                 S_IFSOCK => {
                     println!("Found a Socket!");
@@ -63,8 +65,10 @@ fn extract<P: AsRef<Path>>(vol2: &Ref<HFSVolume<File>>, volume: Rc<RefCell<HFSVo
                     println!("Unsupported file type");
                 },
             };
-            //let contents = std::str::from_utf8(data.as_ref()).unwrap();
-            //println!("Contents: {}", contents);
+            let metadata = local_file_path.metadata()?;
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(body.permissions.fileMode as u32 & 0o7777);
+            set_permissions(&local_file_path, permissions)?;
         },
         _ => {
             panic!("Invalid Return Value");
@@ -87,63 +91,10 @@ fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
     extract(&vol2, Rc::clone(&volume), &record, &local)?;
-    //if let Some(p) = path {
-    //    println!("Open path: {}", p);
-    //    let record = vol2.get_path_record(&p)?;
-    //    match record {
-    //        CatalogBody::Folder(body) => {
-    //            let children = vol2.get_children_id(body.folderID)?;
-    //    for c in &children {
-    //        let perms = match c.body {
-    //            CatalogBody::Folder(ref x) => Some((&x.permissions, 4096)),
-    //            CatalogBody::File(ref x) => Some((&x.permissions, x.dataFork.logicalSize)),
-    //            _ => None,
-    //        };
-    //        let f = c.key.node_name.to_string().nfc().collect::<String>();
-    //        //println!("File: {}", f);
-    //        if let Some((x, size)) = perms {
-    //            // TODO Check for special mode bits
-    //            let ftype = match x.fileMode & S_IFMT {
-    //                S_IFIFO => "p",
-    //                S_IFCHR => "c",
-    //                S_IFDIR => "d",
-    //                S_IFBLK => "b",
-    //                S_IFREG => "-",
-    //                S_IFLNK => "l",
-    //                S_IFSOCK => "s",
-    //                _ => "?",
-    //            };
-    //            let mode = format!("{}{}{}{}{}{}{}{}{}{}",
-    //                    ftype,
-    //                    if x.fileMode & S_IRUSR != 0 { "r" } else { "-" },
-    //                    if x.fileMode & S_IWUSR != 0 { "w" } else { "-" },
-    //                    if x.fileMode & S_IXUSR != 0 { "x" } else { "-" },
-    //                    if x.fileMode & S_IRGRP != 0 { "r" } else { "-" },
-    //                    if x.fileMode & S_IWGRP != 0 { "w" } else { "-" },
-    //                    if x.fileMode & S_IXGRP != 0 { "x" } else { "-" },
-    //                    if x.fileMode & S_IROTH != 0 { "r" } else { "-" },
-    //                    if x.fileMode & S_IWOTH != 0 { "w" } else { "-" },
-    //                    if x.fileMode & S_IXOTH != 0 { "x" } else { "-" });
     //            println!("{} 1 {:5} {:5} {:7} Jan  1 1970 {}", mode, x.ownerID, x.groupID, size, f);
     //            //println!("Mode: {:?}", mode);
     //            //println!("User: {:?}", x.ownerID);
     //            //println!("Group: {:?}", x.groupID);
-    //        }
-    //        //println!("");
-    //    }
-    //        },
-    //        CatalogBody::File(body) => {
-    //            println!("Found a file!");
-    //            let mut data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
-    //            let data = data_fork.read_all().unwrap();
-    //            let contents = std::str::from_utf8(data.as_ref()).unwrap();
-    //            println!("Contents: {}", contents);
-    //        },
-    //        _ => {
-    //            panic!("Invalid Return Value");
-    //        },
-    //    };
-    //};
 
     Ok(())
 }
