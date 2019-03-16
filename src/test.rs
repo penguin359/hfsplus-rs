@@ -820,7 +820,13 @@ fn load_dummy_overflow_file() {
     let mut buffer = Vec::new();
     write_extents_overflow_file(&mut buffer, &extents[..]);
     assert_eq!(buffer.len(), 1024);  // Size of 2 nodes
-    //let btree = BTree::open(Rc::new(RefCell::new(Cursor::new(buffer)))).except("Failed to open overflow b-tree");
+    let mut btree = BTree::<Cursor<&[u8]>, ExtentKey, ExtentRecord>::open(Cursor::new(buffer.as_ref())).expect("Failed to open overflow b-tree");
+    assert_eq!(btree.header.header.rootNode, 1);
+    assert_eq!(btree.header.header.treeDepth, 1);
+    assert_eq!(btree.header.header.firstLeafNode, 1);
+    assert_eq!(btree.header.header.lastLeafNode, 1);
+    assert_eq!(btree.header.header.nodeSize, 512);
+    let leaf_node_result = btree.get_node(1);
 }
 
 #[ignore]

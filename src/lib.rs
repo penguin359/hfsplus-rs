@@ -33,6 +33,7 @@ use hfs_strings::fast_unicode_compare;
 
 
 
+#[derive(Clone)]
 pub struct HFSString(Vec<u16>);
 
 impl fmt::Debug for HFSString {
@@ -144,7 +145,7 @@ impl Eq for HFSString {
 //}
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CatalogKey {
     _case_match: bool,
     parent_id: HFSCatalogNodeID,
@@ -761,71 +762,6 @@ impl<F: Read + Seek> Fork<F> {
         Ok(())
     }
 
-    //fn read(&self, offset: u64, buffer: &mut [u8]) -> std::io::Result<()> {
-    //    let volume = self.volume.borrow();
-    //    let mut file = self.file.borrow_mut();
-    //    let block_size = volume.header.blockSize as u64;
-    //    //let mut block = offset / volume.header.blockSize as u64;
-    //    //let mut block_offset = offset % volume.header.blockSize as u64;
-    //    //let mut buffer_offset = 0;
-    //    //let mut bytes_remaining = buffer.len() as u64;
-    //    //let mut extent_block = 0;
-    //    let mut bytes_read = 0;
-    //    for extent in &self.extents {
-    //        println!("{:?}", extent);
-    //        let (start_block, _, extent_begin, extent_end) = *extent;
-    //        println!("{} - {} - {}", start_block, extent_begin, extent_end);
-    //        let extent_length = extent_end - extent_begin;
-    //        if offset >= extent_end {
-    //            continue;
-    //        }
-    //        //if (offset + bytes_read as u64) < extent_begin {
-    //        //    break;
-    //        //}
-    //        let extent_offset = if offset > extent_begin {
-    //            offset - extent_begin  // Partial first extent
-    //        } else {
-    //            0
-    //        };
-    //        file.seek(SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
-    //        let bytes_remaining = buffer.len() - bytes_read;
-    //        let bytes_to_read = std::cmp::min(extent_length, bytes_remaining as u64);
-    //        file.read_exact(&mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
-    //        bytes_read += bytes_to_read as usize;
-    //        if bytes_read >= buffer.len() {
-    //            println!("All bytes read");
-    //            break;
-    //        }
-
-    //        //let last_block = (extent_block + extent.1) as u64;
-    //        //let extent_bytes = extent.1 as u64 * volume.header.blockSize as u64;
-    //        //if block < last_block {
-    //        //    file.seek(SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
-    //        //    block = 0;
-    //        //    block_offset = 0;
-    //        //    let bytes_to_read = std::cmp::min(extent_bytes, bytes_remaining);
-    //        //    file.read_exact(&mut buffer[buffer_offset as usize..bytes_to_read as usize])?;
-    //        //    bytes_remaining -= bytes_to_read;
-    //        //    buffer_offset += bytes_to_read;
-    //        //}
-    //        //if bytes_remaining <= 0 {
-    //        //    break;
-    //        //}
-    //    }
-    //    println!("Start: {}", self.extents[0].0 as u64);
-    //    //file.seek(SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
-    //    println!("Fork read: {}", buffer.len());
-    //    println!("Bytes read: {}", bytes_read);
-    //    //file.read_exact(buffer)?;
-    //    // TODO This should return a byte count and happily accept
-    //    // a short read, but for now, treat as read_exact()
-    //    if bytes_read < buffer.len() {
-    //        Err(Error::new(ErrorKind::UnexpectedEof, "No more extents to read"))
-    //    } else {
-    //        Ok(())
-    //    }
-    //}
-
     pub fn read_all(&mut self) -> std::io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.logical_size as usize];
         self.seek(SeekFrom::Start(0))?;
@@ -844,11 +780,6 @@ impl<F: Read + Seek> Read for Fork<F> {
         let volume = self.volume.borrow();
         let mut file = self.file.borrow_mut();
         let block_size = volume.header.blockSize as u64;
-        //let mut block = offset / volume.header.blockSize as u64;
-        //let mut block_offset = offset % volume.header.blockSize as u64;
-        //let mut buffer_offset = 0;
-        //let mut bytes_remaining = buffer.len() as u64;
-        //let mut extent_block = 0;
         let mut bytes_read = 0;
         for extent in &self.extents {
             println!("{:?}", extent);
@@ -875,27 +806,10 @@ impl<F: Read + Seek> Read for Fork<F> {
                 println!("All bytes read");
                 break;
             }
-
-            //let last_block = (extent_block + extent.1) as u64;
-            //let extent_bytes = extent.1 as u64 * volume.header.blockSize as u64;
-            //if block < last_block {
-            //    file.seek(SeekFrom::Start((self.extents[0].0 as u64 + block_offset) * volume.header.blockSize as u64 + block_offset))?;
-            //    block = 0;
-            //    block_offset = 0;
-            //    let bytes_to_read = std::cmp::min(extent_bytes, bytes_remaining);
-            //    file.read_exact(&mut buffer[buffer_offset as usize..bytes_to_read as usize])?;
-            //    bytes_remaining -= bytes_to_read;
-            //    buffer_offset += bytes_to_read;
-            //}
-            //if bytes_remaining <= 0 {
-            //    break;
-            //}
         }
         println!("Start: {}", self.extents[0].0 as u64);
-        //file.seek(SeekFrom::Start(self.extents[0].0 as u64 * volume.header.blockSize as u64 + offset))?;
         println!("Fork read: {}", buffer.len());
         println!("Bytes read: {}", bytes_read);
-        //file.read_exact(buffer)?;
         // TODO This should return a byte count and happily accept
         // a short read, but for now, treat as read_exact()
         if bytes_read < buffer.len() {
@@ -1012,7 +926,7 @@ impl<F: Read + Seek> HFSVolume<F> {
         self.catalog_btree.as_ref().unwrap().borrow_mut()
     }
 
-    pub fn get_path_record(&self, filename: &str) -> HFSResult<CatalogBody> {
+    pub fn get_path_record(&self, filename: &str) -> HFSResult<CatalogRecord> {
         let path = PathBuf::from(filename);
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
         let result = self.get_catalog().get_record(&root_thread_key)?;
@@ -1047,14 +961,14 @@ impl<F: Read + Seek> HFSVolume<F> {
                     x
                 },
                 CatalogBody::File(x) => {
-                    return Ok(CatalogBody::File(x));
+                    return Ok(CatalogRecord { key: result.key.clone(), body: CatalogBody::File(x) });
                 },
                 _ => {
                     return Err(HFSError::InvalidRecordType);
                 },
             };
         }
-        Ok(CatalogBody::Folder(parent))
+        Ok(CatalogRecord { key: result.key.clone(), body: CatalogBody::Folder(parent) })
     }
 
     pub fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {

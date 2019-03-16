@@ -31,7 +31,7 @@ fn main() -> std::io::Result<()> {
     if let Some(p) = path {
         println!("Open path: {}", p);
         let record = vol2.get_path_record(&p)?;
-        match record {
+        match record.body {
             CatalogBody::Folder(body) => {
                 let children = vol2.get_children_id(body.folderID)?;
         for c in &children {
