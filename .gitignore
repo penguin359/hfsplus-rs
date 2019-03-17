@@ -1,6 +1,7 @@
 *.swp
 *~
-/target
+/target/
 **/*.rs.bk
 /src/image
 *.img
+Cargo.lock
