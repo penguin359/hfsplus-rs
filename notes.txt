@@ -13,4 +13,8 @@ Test dates/times.
 Test symbolic links.
 Test hard links.
 
-Check on reading file with more extents than logical size bytes
+Check on reading file with more extents than logical size byte
+
+The extract binary should probably become it's own crate.
+It needs to save access/modified times, uid, gid, other files types
+All of which require additional crates

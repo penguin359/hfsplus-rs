@@ -475,7 +475,7 @@ fn load_save_header_node() {
         0, 0,                   // reserved
     ];
 
-    let header_node: [u8; 106] = [
+    let header_record: [u8; 106] = [
         0, 1,                   // treeDepth = 1
         0, 0, 0, 0,             // rootNode = 
         0, 0, 0, 0,             // leafRecords = 
@@ -510,10 +510,10 @@ fn load_save_header_node() {
     // Generate random data for the user data record in the header node
     let mut user_data_buffer = [0u8; 128];
     thread_rng().fill(&mut user_data_buffer);
-    let map_node = [0u8; 256];
-    raw_data.extend(header_node.iter());
+    let map_record = [0u8; 256];
+    raw_data.extend(header_record.iter());
     raw_data.extend(user_data_buffer.iter());
-    raw_data.extend(map_node.iter());
+    raw_data.extend(map_record.iter());
     // First record always starts at offset 14
     // The Header record is always 106 bytes in length
     // The User Data is always 128 bytes
@@ -534,7 +534,7 @@ fn load_save_header_node() {
     assert_eq!(header.descriptor.height, 0);
     assert_eq!(header.descriptor.numRecords, 3);
     assert_eq!(&header.user_data[..], &user_data_buffer[..]);
-    assert_eq!(&header.map[..], &map_node[..]);
+    assert_eq!(&header.map[..], &map_record[..]);
 
     let mut node_buffer = [0u8; 512];
     Node::HeaderNode::<CatalogKey, CatalogRecord>(header).save(&mut node_buffer[..]).expect("Unable to save header node");
@@ -707,11 +707,14 @@ fn load_fragmented_fork_data() {
 /// a small node size of 512 bytes which is not typical, but easier for
 /// testing.
 ///
-/// This is written to hand-craft the data and avoid relying on must of the
+/// This is written to hand-craft the data and avoid relying on much of the
 /// normal filesystem code that will be ultimately tested.
 ///
-fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlusExtentRecord)]) {
-    let mut raw_header_data: Vec<u8> = vec![
+fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlusExtentRecord)]) -> io::Result<()> {
+    assert!(extents.len() < 256, "Only a maximum of 255 extents can be provided");
+    let num_records = extents.len() as u8;
+
+    let raw_header_data: [u8; 14] = [
         0, 0, 0, 0,             // fLink = 0
         0, 0, 0, 0,             // bLink = 0
         kBTHeaderNode as u8,    // kind = header node
@@ -720,15 +723,15 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
         0, 0,                   // reserved
     ];
 
-    let header_node: [u8; 106] = [
+    let header_record: [u8; 106] = [
         0, 1,                   // treeDepth = 1
         0, 0, 0, 1,             // rootNode = 1
-        0, 0, 0, 1,             // leafRecords = 1
+        0, 0, 0, num_records,   // leafRecords = number of extent records
         0, 0, 0, 1,             // firstLeafNode = 1
         0, 0, 0, 1,             // lastLeafNode = 1
         2, 0,                   // nodeSize = 512
         0, 10,                  // maxKeyLength = kHFSPlusExtentKeyMaximumLength
-        0, 0, 0, 1,             // totalNodes = 1
+        0, 0, 0, 2,             // totalNodes = 2
         0, 0, 0, 0,             // freeNodes = 0
         0, 0,                   // reserved1
         0, 0, 2, 0,             // clumpSize = 512
@@ -752,31 +755,32 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
         0, 0, 0, 0,
         0, 0, 0, 0,
     ];
-    let user_data_buffer = [0u8; 128];
-    let map_node = [0u8; 256];
-    raw_header_data.extend(header_node.iter());
-    raw_header_data.extend(user_data_buffer.iter());
-    raw_header_data.extend(map_node.iter());
-    // First record always starts at offset 14
-    // The Header record is always 106 bytes in length
-    // The User Data is always 128 bytes
-    // 4 16-bit record pointers are needed at the end (one for next free location)
-    // Making the Map Record 256 bytes rounds out the node to 512 bytes
-    raw_header_data.write_u16::<BigEndian>(14+106+128+256).unwrap();
-    raw_header_data.write_u16::<BigEndian>(14+106+128).unwrap();
-    raw_header_data.write_u16::<BigEndian>(14+106).unwrap();
-    raw_header_data.write_u16::<BigEndian>(14).unwrap();
-    assert_eq!(raw_header_data.len(), 512);
+    let user_data_record = [0u8; 128];
+    let map_record = [0u8; 256];
+
+    source.write_all(&raw_header_data);
+    source.write_all(&header_record);
+    source.write_all(&user_data_record);
+    source.write_all(&map_record);
+    //// First record always starts at offset 14
+    //// The Header record is always 106 bytes in length
+    //// The User Data is always 128 bytes
+    //// 4 16-bit record pointers are needed at the end (one for next free location)
+    //// Making the Map Record 256 bytes rounds out the node to 512 bytes
+    source.write_u16::<BigEndian>(14+106+128+256).unwrap();
+    source.write_u16::<BigEndian>(14+106+128).unwrap();
+    source.write_u16::<BigEndian>(14+106).unwrap();
+    source.write_u16::<BigEndian>(14).unwrap();
+    //assert_eq!(raw_header_data.len(), 512);
 
     let mut raw_data: Vec<u8> = vec![
         0, 0, 0, 0,         // fLink = 0
         0, 0, 0, 0,         // bLink = 0
         kBTLeafNode as u8,  // kind = leaf node
         1,                  // height = 1
-        0, 0,               // numRecords = 0
+        0, num_records,     // numRecords = number of extent records
         0, 0,               // reserved
     ];
-    raw_data[11] = extents.len() as u8;  // Overwrite the LSB of numRecords
     let mut positions = Vec::new();
     for (key, record) in extents {
         positions.push(raw_data.len() as u16);
@@ -786,13 +790,15 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
     positions.push(raw_data.len() as u16);
     assert!(raw_data.len() <= 512 - 2*positions.len(), "Overflowed extents leaf record");
     raw_data.resize(512 - 2*positions.len(), 0);
-    for position in positions {
-        raw_data.write_u16::<BigEndian>(position).unwrap();
+    for position in positions.iter().rev() {
+        raw_data.write_u16::<BigEndian>(*position).unwrap();
     }
     assert_eq!(raw_data.len(), 512);
+    source.write_all(&raw_data);
+    
+    Ok(())
 }
 
-#[ignore]
 #[test]
 fn load_dummy_overflow_file() {
     let extents = [
@@ -826,7 +832,17 @@ fn load_dummy_overflow_file() {
     assert_eq!(btree.header.header.firstLeafNode, 1);
     assert_eq!(btree.header.header.lastLeafNode, 1);
     assert_eq!(btree.header.header.nodeSize, 512);
-    let leaf_node_result = btree.get_node(1);
+    assert_eq!(btree.header.header.leafRecords, extents.len() as u32);
+    let node = btree.get_node(1).expect("Failed to get leaf node");
+    let leaf_node = match node {
+        Node::LeafNode(leaf) => leaf,
+        _ => { panic!("Node 1 is not a leaf node"); },
+    };
+    assert_eq!(leaf_node.descriptor.numRecords, extents.len() as u16);
+    assert_eq!(leaf_node.records[0].key,  extents[0].0);
+    assert_eq!(leaf_node.records[0].body, extents[0].1);
+    assert_eq!(leaf_node.records[1].key,  extents[1].0);
+    assert_eq!(leaf_node.records[1].body, extents[1].1);
 }
 
 #[ignore]
