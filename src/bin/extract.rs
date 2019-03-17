@@ -1,3 +1,4 @@
+//#![feature(fs_time)]
 extern crate unicode_normalization;
 use unicode_normalization::UnicodeNormalization;
 
@@ -10,6 +11,7 @@ use std::fs::{self, OpenOptions};
 use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt;
 use std::fs::set_permissions;
+//use std::fs::set_file_times;
 
 use hfsplus::*;
 
@@ -69,6 +71,8 @@ fn extract<P: AsRef<Path>>(vol2: &Ref<HFSVolume<File>>, volume: Rc<RefCell<HFSVo
             let mut permissions = metadata.permissions();
             permissions.set_mode(body.permissions.fileMode as u32 & 0o7777);
             set_permissions(&local_file_path, permissions)?;
+            println!("User: {:?}", body.permissions.ownerID);
+            println!("Group: {:?}", body.permissions.groupID);
         },
         _ => {
             panic!("Invalid Return Value");
