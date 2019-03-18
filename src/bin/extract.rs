@@ -32,7 +32,7 @@ fn extract<P: AsRef<Path>>(vol2: &Ref<HFSVolume<File>>, volume: Rc<RefCell<HFSVo
         },
         CatalogBody::File(body) => {
             println!("Found a file: {}", filename);
-            let mut data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
+            let mut data_fork = Fork::load(Rc::clone(&vol2.file), body.fileID, 0, Rc::clone(&volume), &body.dataFork)?;
             let data = data_fork.read_all().unwrap();
             match body.permissions.fileMode & S_IFMT {
                 S_IFIFO => {

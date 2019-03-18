@@ -385,6 +385,7 @@ pub enum HFSError {
     InvalidRecordKey,
     InvalidRecordType,
     UnsupportedOperation,
+    KeyNotFound,
 }
 
 impl From<io::Error> for HFSError {
@@ -397,7 +398,7 @@ impl From<HFSError> for Error {
     fn from(x: HFSError) -> Error {
         match x {
             HFSError::IOError(y) => y,
-            _ => Error::new(ErrorKind::Other, "HFS Error"),
+            _ => Error::new(ErrorKind::Other, format!("{:?}", x)),
         }
     }
 }
@@ -693,12 +694,12 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                 println!("{:?}", x.descriptor);
                 for record in &x.records {
                     if key < record.get_key() {
-                        return Err(HFSError::InvalidRecordKey);
+                        return Err(HFSError::KeyNotFound);
                     } else if key == record.get_key() {
                         return Ok(Rc::clone(record));
                     }
                 }
-                Err(HFSError::InvalidRecordKey)
+                Err(HFSError::KeyNotFound)
             },
             _ => {
                 Err(HFSError::InvalidRecordType)
@@ -729,21 +730,23 @@ pub use internal::*;
 pub struct Fork<F: Read + Seek> {
     file: Rc<RefCell<F>>,
     position: u64,
+    catalog_id: HFSCatalogNodeID,
+    fork_type: u8,
     volume: Rc<RefCell<HFSVolume<F>>>,
     logical_size: u64,
     extents: Vec<(u32, u32, u64, u64)>,
 }
 
 impl<F: Read + Seek> Fork<F> {
-    pub fn load(file: Rc<RefCell<F>>, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
+    pub fn load(file: Rc<RefCell<F>>, catalog_id: HFSCatalogNodeID, fork_type: u8, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
         let block_size = volume.borrow().header.blockSize as u64;
         //Err(Error::new(ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
         let mut extent_position = 0;
         let mut extent_block = 0;
         println!("Block Size: {}", block_size);
-        let mut extents_result = Some(&data.extents);
-        while let Some(&extent_list) = extents_result {
+        let mut extents_result = Some(data.extents);
+        while let Some(extent_list) = extents_result {
             for extent in &extent_list {
                 let extent_size = extent.blockCount as u64 * block_size;
                 let extent_end = extent_position + extent_size;
@@ -757,14 +760,13 @@ impl<F: Read + Seek> Fork<F> {
             extents_result = None;
             if extent_position < data.logicalSize {
                 if let Some(et) = &volume.borrow().extents_btree {
-                    let search_key = ExtentKey::new(41, 0x00, extent_block);
-                    let extent_records = et.borrow();
+                    let search_key = ExtentKey::new(catalog_id, fork_type, extent_block);
+                    let extent_record = et.borrow_mut().get_record(&search_key)?;
+                    extents_result = Some(extent_record.body);
                 }
-            } else {
-                extents_result = None;
             }
         }
-        Ok(Fork { file, position: 0, volume, logical_size: data.logicalSize, extents })
+        Ok(Fork { file, position: 0, catalog_id, fork_type, volume, logical_size: data.logicalSize, extents })
     }
 
     fn check(&self) -> std::io::Result<()> {
@@ -895,8 +897,8 @@ impl<F: Read + Seek> HFSVolume<F> {
             catalog_btree: None,
             extents_btree: None,
         }));
-        let catalog_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile)?;
-        let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.extentsFile)?;
+        let catalog_fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile)?;
+        let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSExtentsFileID, 0, Rc::clone(&volume), &volume.borrow().header.extentsFile)?;
         volume.borrow_mut().catalog_btree = Some(Rc::new(RefCell::new(BTree::open(catalog_fork)?)));
         volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork)?)));
         Ok(volume)

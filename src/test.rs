@@ -425,10 +425,10 @@ fn load_extents_leaf_node() {
         HFSPlusExtentDescriptor { startBlock: 0, blockCount: 0, },
     ];
     let extents1_pos = raw_data.len() as u16;
-    extents1_key.export(&mut raw_data);
+    extents1_key.export(&mut raw_data).unwrap();
     export_record(&extents1, &mut raw_data).unwrap();
     let extents2_pos = raw_data.len() as u16;
-    extents2_key.export(&mut raw_data);
+    extents2_key.export(&mut raw_data).unwrap();
     export_record(&extents2, &mut raw_data).unwrap();
     let free_pos = raw_data.len() as u16;
     raw_data.resize(512 - 2*3, 0);
@@ -456,7 +456,7 @@ fn load_extents_leaf_node() {
     assert_eq!(&leaf.records[1].body, &extents2);
 
     let mut actual_buffer = Vec::new();
-    leaf.descriptor.export(&mut actual_buffer);
+    leaf.descriptor.export(&mut actual_buffer).unwrap();
     assert_eq!(actual_buffer.len(), 14);
     assert!(raw_data.starts_with(&actual_buffer));
     let mut node_buffer = [0u8; 512];
@@ -567,7 +567,7 @@ fn test_bad_fork_data() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
+    let fork = Fork::load(file, 20, 0, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_err(), "Errors in fork data not detected in check");
 }
 
@@ -597,7 +597,7 @@ fn test_good_fork_data() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(file, volume, &fork_data).expect("Failed to load Fork");
+    let fork = Fork::load(file, 20, 0, volume, &fork_data).expect("Failed to load Fork");
     assert!(fork.check().is_ok(), "Errors found in fork data");
 }
 
@@ -658,7 +658,7 @@ fn load_fragmented_fork_data() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 33];
     fork.seek(std::io::SeekFrom::Start(0)).unwrap();
     fork.read(buffer.as_mut()).unwrap();
@@ -758,10 +758,10 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
     let user_data_record = [0u8; 128];
     let map_record = [0u8; 256];
 
-    source.write_all(&raw_header_data);
-    source.write_all(&header_record);
-    source.write_all(&user_data_record);
-    source.write_all(&map_record);
+    source.write_all(&raw_header_data)?;
+    source.write_all(&header_record)?;
+    source.write_all(&user_data_record)?;
+    source.write_all(&map_record)?;
     //// First record always starts at offset 14
     //// The Header record is always 106 bytes in length
     //// The User Data is always 128 bytes
@@ -784,7 +784,7 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
     let mut positions = Vec::new();
     for (key, record) in extents {
         positions.push(raw_data.len() as u16);
-        key.export(&mut raw_data);
+        key.export(&mut raw_data)?;
         export_record(&record[..], &mut raw_data).unwrap();
     }
     positions.push(raw_data.len() as u16);
@@ -794,7 +794,7 @@ fn write_extents_overflow_file(source: &mut Write, extents: &[(ExtentKey, HFSPlu
         raw_data.write_u16::<BigEndian>(*position).unwrap();
     }
     assert_eq!(raw_data.len(), 512);
-    source.write_all(&raw_data);
+    source.write_all(&raw_data)?;
     
     Ok(())
 }
@@ -824,7 +824,8 @@ fn load_dummy_overflow_file() {
         ]),
     ];
     let mut buffer = Vec::new();
-    write_extents_overflow_file(&mut buffer, &extents[..]);
+    write_extents_overflow_file(&mut buffer, &extents[..])
+        .expect("Failed to create extents overflow file");
     assert_eq!(buffer.len(), 1024);  // Size of 2 nodes
     let mut btree = BTree::<Cursor<&[u8]>, ExtentKey, ExtentRecord>::open(Cursor::new(buffer.as_ref())).expect("Failed to open overflow b-tree");
     assert_eq!(btree.header.header.rootNode, 1);
@@ -845,7 +846,6 @@ fn load_dummy_overflow_file() {
     assert_eq!(leaf_node.records[1].body, extents[1].1);
 }
 
-#[ignore]
 #[test]
 fn load_fragmented_fork_data_with_overflow() {
     let mut header = empty_v4_volume_header();
@@ -863,7 +863,7 @@ fn load_fragmented_fork_data_with_overflow() {
         ( 40, 2), ( 25, 4), ( 50, 1), ( 54, 3),  // 10*4 = 40 blocks (total  84)
         ( 60, 1), ( 64, 1), ( 66, 5), ( 73, 1),  //  8*4 = 32 blocks (total 116)
         ( 76, 2), ( 79, 4), ( 85, 1), ( 74, 2),  //  9*4 = 36 blocks (total 152)
-        ( 30, 1), ( 34, 1), ( 36, 1), ( 85, 1),  //  4*4 = 16 blocks (total 168)
+        ( 30, 1), ( 34, 1), ( 36, 1), ( 86, 1),  //  4*4 = 16 blocks (total 168)
         (100, 5), (110, 6), (120, 2), (125, 4),  // 17*4 = 68 blocks (total 236)
         (130, 2), (157, 1), (140, 2), (  0, 0),  //  5*4 = 20 blocks (total 256)
     ];
@@ -901,6 +901,20 @@ fn load_fragmented_fork_data_with_overflow() {
         }
         println!("");
     }
+    let mut first_overflow_block = header.catalogFile.extents.iter().fold(0, |n, i| n + i.blockCount);
+    let mut extent_entries = Vec::new();
+    for entry in &overflow_extents {
+        extent_entries.push((ExtentKey::new(kHFSCatalogFileID, 0x00, first_overflow_block), *entry));
+        first_overflow_block = entry.iter().fold(first_overflow_block, |n, i| n + i.blockCount);
+    }
+    assert_eq!(raw_data.len(), 1024);
+    write_extents_overflow_file(&mut raw_data, &extent_entries[..])
+        .expect("Failed to create extents overflow file");
+    assert_eq!(raw_data.len(), 2048);
+    header.extentsFile.logicalSize = 1024;
+    header.extentsFile.totalBlocks = 2;
+    header.extentsFile.extents[0].startBlock = 1024 / 4;
+    header.extentsFile.extents[0].blockCount = 1024 / 4;
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
         header,
@@ -908,10 +922,12 @@ fn load_fragmented_fork_data_with_overflow() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let extents_fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSExtentsFileID, 0, Rc::clone(&volume), &volume.borrow().header.extentsFile).expect("Failed to load extents overflow fork");
+    volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork).expect("Failed to open extents overflow B-Tree"))));
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).expect("Failed to open test file data fork");
     let mut buffer = [0u8; 256];
     fork.seek(std::io::SeekFrom::Start(0)).unwrap();
-    fork.read(buffer.as_mut()).unwrap();
+    fork.read(buffer.as_mut()).expect("Failed to read test file fork");
     //println!("Buffer: {:?}", buffer.to_vec());
     println!("Expected:");
     for row in 0..(expected.len()+16-1) / 16 {
@@ -944,13 +960,17 @@ fn load_fragmented_fork_data_with_overflow() {
         println!("");
     }
     assert_eq!(buffer.len(), expected.len());
+    let out = buffer.to_vec();
+    for idx in 0..256 {
+        assert_eq!(out[idx], expected[idx], "Failed at index {}", idx);
+    }
     assert_eq!(buffer.to_vec(), expected);
 }
 
 #[test]
 fn load_beyond_end_of_fork_extents() {
     let mut header = empty_v4_volume_header();
-    let mut raw_data = create_dead_beef(1024);
+    let raw_data = create_dead_beef(1024);
     header.blockSize = 4;   // Really small block size to ease testing
     header.catalogFile.logicalSize = 33;
     header.catalogFile.totalBlocks = 9;
@@ -971,7 +991,7 @@ fn load_beyond_end_of_fork_extents() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 37];  // Note, this is one more byte than in fork extents
     fork.seek(SeekFrom::Start(0)).unwrap();
     let result = fork.read(buffer.as_mut());
@@ -981,7 +1001,7 @@ fn load_beyond_end_of_fork_extents() {
 #[test]
 fn load_beyond_end_of_fork_data() {
     let mut header = empty_v4_volume_header();
-    let mut raw_data = create_dead_beef(1024);
+    let raw_data = create_dead_beef(1024);
     header.blockSize = 4;   // Really small block size to ease testing
     header.catalogFile.logicalSize = 33;
     header.catalogFile.totalBlocks = 9;
@@ -1002,7 +1022,7 @@ fn load_beyond_end_of_fork_data() {
         catalog_btree: None,
         extents_btree: None,
     }));
-    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
+    let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 34];  // Note, this is one more byte than in fork data
                                  // but still resides inside fork extent
     fork.seek(SeekFrom::Start(0)).unwrap();

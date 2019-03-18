@@ -75,7 +75,7 @@ fn main() -> std::io::Result<()> {
             },
             CatalogBody::File(body) => {
                 println!("Found a file!");
-                let mut data_fork = Fork::load(Rc::clone(&vol2.file), Rc::clone(&volume), &body.dataFork)?;
+                let mut data_fork = Fork::load(Rc::clone(&vol2.file), body.fileID, 0, Rc::clone(&volume), &body.dataFork)?;
                 let data = data_fork.read_all().unwrap();
                 let contents = std::str::from_utf8(data.as_ref()).unwrap();
                 println!("Contents: {}", contents);
