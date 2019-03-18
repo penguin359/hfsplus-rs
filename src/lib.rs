@@ -740,15 +740,29 @@ impl<F: Read + Seek> Fork<F> {
         //Err(Error::new(ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
         let mut extent_position = 0;
+        let mut extent_block = 0;
         println!("Block Size: {}", block_size);
-        for extent in &data.extents {
-            let extent_size = extent.blockCount as u64 * block_size;
-            let extent_end = extent_position + extent_size;
-            extent_position = std::cmp::min(data.logicalSize, extent_position);
-            let extent_end = std::cmp::min(data.logicalSize, extent_end);
-            println!("{} = {} = {} = {}", extent.startBlock, extent.blockCount, extent_position, extent_end);
-            extents.push((extent.startBlock, extent.blockCount, extent_position, extent_end));
-            extent_position += extent_size;
+        let mut extents_result = Some(&data.extents);
+        while let Some(&extent_list) = extents_result {
+            for extent in &extent_list {
+                let extent_size = extent.blockCount as u64 * block_size;
+                let extent_end = extent_position + extent_size;
+                extent_position = std::cmp::min(data.logicalSize, extent_position);
+                let extent_end = std::cmp::min(data.logicalSize, extent_end);
+                println!("{} = {} = {} = {}", extent.startBlock, extent.blockCount, extent_position, extent_end);
+                extents.push((extent.startBlock, extent.blockCount, extent_position, extent_end));
+                extent_position += extent_size;
+                extent_block += extent.blockCount;
+            }
+            extents_result = None;
+            if extent_position < data.logicalSize {
+                if let Some(et) = &volume.borrow().extents_btree {
+                    let search_key = ExtentKey::new(41, 0x00, extent_block);
+                    let extent_records = et.borrow();
+                }
+            } else {
+                extents_result = None;
+            }
         }
         Ok(Fork { file, position: 0, volume, logical_size: data.logicalSize, extents })
     }
@@ -841,7 +855,7 @@ pub struct HFSVolume<F: Read + Seek> {
     header: HFSPlusVolumeHeader,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
     pub catalog_btree: Option<BTreeRc<Fork<F>, CatalogKey, CatalogRecord>>,
-    pub extents_btree: Option<BTreeRc<Fork<F>, CatalogKey, CatalogRecord>>,
+    pub extents_btree: Option<BTreeRc<Fork<F>, ExtentKey, ExtentRecord>>,
 }
 
 impl<F: Read + Seek> HFSVolume<F> {

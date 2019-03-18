@@ -880,11 +880,26 @@ fn load_fragmented_fork_data_with_overflow() {
 
         group.startBlock = *start as u32;
         group.blockCount = *size as u32;
-        for i in 0..4**size {
-            raw_data[*start + i] = value as u8;
+        for i in 0..4* *size {
+            raw_data[*start*4 + i] = value as u8;
             expected.push(value as u8);
             value += 1;
         }
+    }
+    println!("Source:");
+    for row in 0..(raw_data.len()+16-1) / 16 {
+        print!("  ");
+        for idx in 0..8 {
+            if row*16 + idx < raw_data.len() {
+                print!("{:02x} ", raw_data[row*16 + idx]);
+            }
+        }
+        for idx in 8..16 {
+            if row*16 + idx < raw_data.len() {
+                print!(" {:02x}", raw_data[row*16 + idx]);
+            }
+        }
+        println!("");
     }
     let volume = Rc::new(RefCell::new(HFSVolume {
         file: Rc::new(RefCell::new(Cursor::new(raw_data))),
