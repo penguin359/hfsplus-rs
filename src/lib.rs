@@ -1,9 +1,8 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fs::File;
-//use std::io::{Read, Write, Seek};
 use std::io::prelude::*;
-use std::io::{self, Cursor, Error, ErrorKind, SeekFrom};
+use std::io::{self, Cursor, SeekFrom};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
@@ -31,6 +30,35 @@ extern crate rand;
 
 use hfs_strings::fast_unicode_compare;
 
+
+
+#[derive(Debug)]
+pub enum Error {
+    InvalidData(String),
+    IOError(io::Error),
+    BadNode,
+    InvalidRecordKey,
+    InvalidRecordType,
+    UnsupportedOperation,
+    KeyNotFound,
+}
+
+impl From<io::Error> for Error {
+    fn from(x: io::Error) -> Error {
+        Error::IOError(x)
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(x: Error) -> io::Error {
+        match x {
+            Error::IOError(y) => y,
+            _ => io::Error::new(io::ErrorKind::Other, format!("{:?}", x)),
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 
 #[derive(Clone)]
@@ -115,7 +143,7 @@ impl Eq for HFSString {
 //}
 //
 //impl HFSUniStr255 {
-//    fn import(source: &mut Read) -> std::io::Result<Self> {
+//    fn import(source: &mut Read) -> io::Result<Self> {
 //        let length = source.read_u16::<BigEndian>()?;
 //        let mut unicode = Vec::with_capacity(length as usize);
 //        for _ in 0..length {
@@ -129,7 +157,7 @@ impl Eq for HFSString {
 //}
 //
 //impl HFSPlusCatalogKey {
-//    fn import(source: &mut Read) -> std::io::Result<Self> {
+//    fn import(source: &mut Read) -> io::Result<Self> {
 //        Ok(Self {
 //            keyLength: source.read_u16::<BigEndian>()?,
 //            parentID: source.read_u32::<BigEndian>()?,
@@ -153,15 +181,15 @@ pub struct CatalogKey {
 }
 
 impl Key for CatalogKey {
-    fn import(source: &mut Read) -> HFSResult<Self> {
+    fn import(source: &mut Read) -> Result<Self> {
         let key_length = source.read_u16::<BigEndian>()?;
         if key_length < 6 {
-            return Err(HFSError::InvalidRecordKey);
+            return Err(Error::InvalidRecordKey);
         }
         let parent_id = source.read_u32::<BigEndian>()?;
         let count = source.read_u16::<BigEndian>()?;
         if key_length != count*2 + 6 {
-            return Err(HFSError::InvalidRecordKey);
+            return Err(Error::InvalidRecordKey);
         }
         let mut node_name = Vec::with_capacity(count as usize);
         for _ in 0..count as usize {
@@ -174,8 +202,8 @@ impl Key for CatalogKey {
         })
     }
 
-    fn export(&self, _source: &mut Write) -> HFSResult<()> {
-        Err(HFSError::UnsupportedOperation)
+    fn export(&self, _source: &mut Write) -> Result<()> {
+        Err(Error::UnsupportedOperation)
     }
 }
 
@@ -221,11 +249,11 @@ impl ExtentKey {
 }
 
 impl Key for ExtentKey {
-    fn import(source: &mut Read) -> HFSResult<Self> {
+    fn import(source: &mut Read) -> Result<Self> {
         Ok(ExtentKey(HFSPlusExtentKey::import(source)?))
     }
 
-    fn export(&self, source: &mut Write) -> HFSResult<()> {
+    fn export(&self, source: &mut Write) -> Result<()> {
         self.0.export(source)?;
         Ok(())
     }
@@ -273,13 +301,13 @@ pub struct IndexRecord<K> {
 }
 
 impl<K> Record<K> for IndexRecord<K> {
-    fn import(source: &mut Read, key: K) -> std::io::Result<Self> {
+    fn import(source: &mut Read, key: K) -> io::Result<Self> {
         let node_id = source.read_u32::<BigEndian>()?;
         Ok(IndexRecord { key, node_id })
     }
 
-    fn export(&self, _source: &mut Write) -> std::io::Result<()> {
-        Err(io::Error::new(ErrorKind::Other, "Unsupported operation"))
+    fn export(&self, _source: &mut Write) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation"))
     }
 
     fn get_key(&self) -> &K {
@@ -300,7 +328,7 @@ pub struct CatalogRecord {
 }
 
 impl Record<CatalogKey> for CatalogRecord {
-    fn import(source: &mut Read, key: CatalogKey) -> std::io::Result<Self> {
+    fn import(source: &mut Read, key: CatalogKey) -> io::Result<Self> {
         let record_type = source.read_i16::<BigEndian>()?;
         let body = match record_type {
             internal::kHFSPlusFolderRecord => {
@@ -314,7 +342,7 @@ impl Record<CatalogKey> for CatalogRecord {
                 let parent_id = source.read_u32::<BigEndian>()?;
                 let count = source.read_u16::<BigEndian>()?;
                 //if key_length != count*2 + 6 {
-                //    return Err(HFSError::InvalidRecordKey);
+                //    return Err(Error::InvalidRecordKey);
                 //}
                 let mut node_name = Vec::with_capacity(count as usize);
                 for _ in 0..count as usize {
@@ -328,7 +356,7 @@ impl Record<CatalogKey> for CatalogRecord {
                 let parent_id = source.read_u32::<BigEndian>()?;
                 let count = source.read_u16::<BigEndian>()?;
                 //if key_length != count*2 + 6 {
-                //    return Err(HFSError::InvalidRecordKey);
+                //    return Err(Error::InvalidRecordKey);
                 //}
                 let mut node_name = Vec::with_capacity(count as usize);
                 for _ in 0..count as usize {
@@ -338,15 +366,15 @@ impl Record<CatalogKey> for CatalogRecord {
                 CatalogBody::FileThread(to_key)
             },
             _ => {
-                //return Err(HFSError::InvalidRecordType);
-                return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
+                //return Err(Error::InvalidRecordType);
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
             },
         };
         Ok(CatalogRecord { key, body })
     }
 
-    fn export(&self, _source: &mut Write) -> std::io::Result<()> {
-        Err(io::Error::new(ErrorKind::Other, "Unsupported operation"))
+    fn export(&self, _source: &mut Write) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation"))
     }
 
     fn get_key(&self) -> &CatalogKey {
@@ -361,12 +389,12 @@ pub struct ExtentRecord {
 }
 
 impl Record<ExtentKey> for ExtentRecord {
-    fn import(source: &mut Read, key: ExtentKey) -> std::io::Result<Self> {
+    fn import(source: &mut Read, key: ExtentKey) -> io::Result<Self> {
         let body = import_record(source)?;
         Ok(ExtentRecord { key, body })
     }
 
-    fn export(&self, source: &mut Write) -> std::io::Result<()> {
+    fn export(&self, source: &mut Write) -> io::Result<()> {
         export_record(&self.body, source)?;
         Ok(())
     }
@@ -377,39 +405,10 @@ impl Record<ExtentKey> for ExtentRecord {
 }
 
 
-#[derive(Debug)]
-pub enum HFSError {
-    InvalidData(String),
-    IOError(io::Error),
-    BadNode,
-    InvalidRecordKey,
-    InvalidRecordType,
-    UnsupportedOperation,
-    KeyNotFound,
-}
-
-impl From<io::Error> for HFSError {
-    fn from(x: io::Error) -> HFSError {
-        HFSError::IOError(x)
-    }
-}
-
-impl From<HFSError> for Error {
-    fn from(x: HFSError) -> Error {
-        match x {
-            HFSError::IOError(y) => y,
-            _ => Error::new(ErrorKind::Other, format!("{:?}", x)),
-        }
-    }
-}
-
-type HFSResult<T> = Result<T, HFSError>;
-
-
 pub trait Key : fmt::Debug + Ord + PartialOrd + Eq + PartialEq {
-    fn import(source: &mut Read) -> HFSResult<Self>
+    fn import(source: &mut Read) -> Result<Self>
         where Self: Sized;
-    fn export(&self, source: &mut Write) -> HFSResult<()>;
+    fn export(&self, source: &mut Write) -> Result<()>;
 }
 
 pub struct HeaderNode {
@@ -441,7 +440,7 @@ pub enum Node<K, R> {
 }
 
 impl<K: Key, R: Record<K>> Node<K, R> {
-    fn load(data: &[u8]) -> Result<Node<K, R>, HFSError> {
+    fn load(data: &[u8]) -> Result<Node<K, R>> {
         // TODO Check minimum size
         // TODO Check numRecords within size limits
         let node = BTNodeDescriptor::import(&mut &data[..])?;
@@ -462,7 +461,7 @@ impl<K: Key, R: Record<K>> Node<K, R> {
             // All offsets must be between Descriptor and
             // beginning of offset table
             if offset < 14 || offset > last_offset_pos {
-                return Err(HFSError::InvalidData("Invalid record offset value".to_string()));
+                return Err(Error::InvalidData("Invalid record offset value".to_string()));
             }
             offsets.push(offset);
             //println!("  Offset: {}", offset);
@@ -510,12 +509,12 @@ impl<K: Key, R: Record<K>> Node<K, R> {
                 records: r,
             }))
         } else {
-            //Err(Error::new(ErrorKind::InvalidData, "Invalid Node Type"))
-            Err(HFSError::InvalidData("Invalid Node Type".to_string()))
+            //Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid Node Type"))
+            Err(Error::InvalidData("Invalid Node Type".to_string()))
         }
     }
 
-    fn save(&self, data: &mut [u8]) -> Result<(), HFSError> {
+    fn save(&self, data: &mut [u8]) -> Result<()> {
         let data_len = data.len() as u64;
         let mut cursor = Cursor::new(data);
         let mut positions = Vec::new();
@@ -537,7 +536,7 @@ impl<K: Key, R: Record<K>> Node<K, R> {
                     record.export(&mut cursor)?;
                 }
             },
-            _ => { return Err(HFSError::UnsupportedOperation); },
+            _ => { return Err(Error::UnsupportedOperation); },
         };
         positions.push(cursor.position() as u16);
         cursor.set_position(data_len - 2*positions.len() as u64);
@@ -558,7 +557,7 @@ pub struct BTree<F: Read + Seek, K, R> {
 }
 
 impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
-    fn open(mut fork: F) -> Result<BTree<F, K, R>, HFSError> {
+    fn open(mut fork: F) -> Result<BTree<F, K, R>> {
         let node_size;
         let header;
         //let node_size = 0;
@@ -583,7 +582,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                 x
             },
             _ => {
-                return Err(HFSError::BadNode);
+                return Err(Error::BadNode);
             },
         };
         // XXX Verify size >= 512
@@ -604,7 +603,7 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         })
     }
 
-    pub fn get_node(&mut self, node_num: usize) -> HFSResult<Node<K, R>> {
+    pub fn get_node(&mut self, node_num: usize) -> Result<Node<K, R>> {
         {
         let mut buffer = vec![0; self.node_size as usize];
         self.fork.seek(SeekFrom::Start((node_num*self.node_size as usize) as u64))?;
@@ -616,14 +615,14 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
         //        x
         //    },
         //    _ => {
-        //        return Err(HFSError::BadNode);
+        //        return Err(Error::BadNode);
         //    },
         //};
         Ok(node)
         }
     }
 
-    fn get_record_range_node(&mut self, first: &K, last: &K, node_id: usize) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range_node(&mut self, first: &K, last: &K, node_id: usize) -> Result<Vec<Rc<R>>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
@@ -662,25 +661,25 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                     let next_node = self.get_node(x.descriptor.fLink as usize)?;
                     x = match next_node {
                         Node::LeafNode(x) => x,
-                        _ => { return Err(HFSError::InvalidRecordType); }
+                        _ => { return Err(Error::InvalidRecordType); }
                     };
                 }
                 Ok(return_records)
             },
             _ => {
-                Err(HFSError::InvalidRecordType)
+                Err(Error::InvalidRecordType)
             }
         }
     }
 
-    fn get_record_node(&mut self, key: &K, node_id: usize) -> HFSResult<Rc<R>> {
+    fn get_record_node(&mut self, key: &K, node_id: usize) -> Result<Rc<R>> {
         let node = self.get_node(node_id)?;
         match node {
             Node::IndexNode(x) => {
                 println!("{:?}", x.descriptor);
                 let mut return_record = &x.records[0];
                 if key < return_record.get_key() {
-                    return Err(HFSError::InvalidRecordKey);
+                    return Err(Error::InvalidRecordKey);
                 }
                 for record in x.records.iter().skip(1) {
                     if key < record.get_key() {
@@ -694,24 +693,24 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                 println!("{:?}", x.descriptor);
                 for record in &x.records {
                     if key < record.get_key() {
-                        return Err(HFSError::KeyNotFound);
+                        return Err(Error::KeyNotFound);
                     } else if key == record.get_key() {
                         return Ok(Rc::clone(record));
                     }
                 }
-                Err(HFSError::KeyNotFound)
+                Err(Error::KeyNotFound)
             },
             _ => {
-                Err(HFSError::InvalidRecordType)
+                Err(Error::InvalidRecordType)
             }
         }
     }
 
-    fn get_record(&mut self, key: &K) -> HFSResult<Rc<R>> {
+    fn get_record(&mut self, key: &K) -> Result<Rc<R>> {
         self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 
-    fn get_record_range(&mut self, first: &K, last: &K) -> HFSResult<Vec<Rc<R>>> {
+    fn get_record_range(&mut self, first: &K, last: &K) -> Result<Vec<Rc<R>>> {
         self.get_record_range_node(first, last, self.header.header.rootNode as usize)
     }
 }
@@ -738,9 +737,9 @@ pub struct Fork<F: Read + Seek> {
 }
 
 impl<F: Read + Seek> Fork<F> {
-    pub fn load(file: Rc<RefCell<F>>, catalog_id: HFSCatalogNodeID, fork_type: u8, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> std::io::Result<Fork<F>> {
+    pub fn load(file: Rc<RefCell<F>>, catalog_id: HFSCatalogNodeID, fork_type: u8, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> io::Result<Fork<F>> {
         let block_size = volume.borrow().header.blockSize as u64;
-        //Err(Error::new(ErrorKind::Other, "f"))
+        //Err(io::Error::new(io::ErrorKind::Other, "f"))
         let mut extents = Vec::with_capacity(8);
         let mut extent_position = 0;
         let mut extent_block = 0;
@@ -769,16 +768,16 @@ impl<F: Read + Seek> Fork<F> {
         Ok(Fork { file, position: 0, catalog_id, fork_type, volume, logical_size: data.logicalSize, extents })
     }
 
-    fn check(&self) -> std::io::Result<()> {
+    fn check(&self) -> io::Result<()> {
         let sum: u32 = self.extents.iter().map(|x| x.1).sum();
         let actual_size = sum as u64 * self.volume.borrow().header.blockSize as u64;
         if actual_size != self.logical_size {
-            return Err(Error::new(ErrorKind::Other, "Size does not add up"));
+            return Err(io::Error::new(io::ErrorKind::Other, "Size does not add up"));
         }
         Ok(())
     }
 
-    pub fn read_all(&mut self) -> std::io::Result<Vec<u8>> {
+    pub fn read_all(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.logical_size as usize];
         self.seek(SeekFrom::Start(0))?;
         self.read(buffer.as_mut_slice())?;
@@ -829,7 +828,7 @@ impl<F: Read + Seek> Read for Fork<F> {
         // TODO This should return a byte count and happily accept
         // a short read, but for now, treat as read_exact()
         if bytes_read < buffer.len() {
-            Err(Error::new(ErrorKind::UnexpectedEof, "No more extents to read"))
+            Err(io::Error::new(io::ErrorKind::UnexpectedEof, "No more extents to read"))
         } else {
             self.position += bytes_read as u64;
             Ok(bytes_read)
@@ -843,7 +842,7 @@ impl<F: Read + Seek> Seek for Fork<F> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_position = match pos {
             SeekFrom::Start(x) => x,
-            _ => { return Err(io::Error::new(ErrorKind::Other, "Unsupported operation")); },
+            _ => { return Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation")); },
         };
         self.position = new_position;
         Ok(new_position)
@@ -861,7 +860,7 @@ pub struct HFSVolume<F: Read + Seek> {
 }
 
 impl<F: Read + Seek> HFSVolume<F> {
-    pub fn load(mut file: F) -> std::io::Result<Rc<RefCell<HFSVolume<F>>>> {
+    pub fn load(mut file: F) -> io::Result<Rc<RefCell<HFSVolume<F>>>> {
         file.seek(SeekFrom::Start(1024))?;
         let header = HFSPlusVolumeHeader::import(&mut file)?;
         let _hfsx_volume = match header.signature {
@@ -875,7 +874,7 @@ impl<F: Read + Seek> HFSVolume<F> {
             },
             _ => {
                 println!("Unknown Volume");
-                return Err(Error::new(ErrorKind::InvalidData, "Invalid volume signature"));
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid volume signature"));
             },
         };
         //if !hfsx_volume {
@@ -904,7 +903,7 @@ impl<F: Read + Seek> HFSVolume<F> {
         Ok(volume)
     }
 
-    pub fn get_children_id(&self, node_id: HFSCatalogNodeID) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+    pub fn get_children_id(&self, node_id: HFSCatalogNodeID) -> Result<Vec<Rc<CatalogRecord>>> {
         let mut btree = self.catalog_btree.as_ref().expect("Can't unwrap").borrow_mut();
         let first = CatalogKey { _case_match: false, parent_id: node_id, node_name: HFSString::from("") };
         let last = CatalogKey { _case_match: false, parent_id: node_id+1, node_name: HFSString::from("") };
@@ -927,14 +926,14 @@ impl<F: Read + Seek> HFSVolume<F> {
         }
     }
 
-    fn get_children(&self, key: &CatalogKey) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+    fn get_children(&self, key: &CatalogKey) -> Result<Vec<Rc<CatalogRecord>>> {
         let record = {
             let mut btree = self.catalog_btree.as_ref().unwrap().borrow_mut();
             btree.get_record(key)?
         };
         match &record.body {
             CatalogBody::Folder(x) => self.get_children_id(x.folderID),
-            _ => Err(HFSError::InvalidRecordKey)
+            _ => Err(Error::InvalidRecordKey)
         }
     }
 
@@ -942,7 +941,7 @@ impl<F: Read + Seek> HFSVolume<F> {
         self.catalog_btree.as_ref().unwrap().borrow_mut()
     }
 
-    pub fn get_path_record(&self, filename: &str) -> HFSResult<CatalogRecord> {
+    pub fn get_path_record(&self, filename: &str) -> Result<CatalogRecord> {
         let path = PathBuf::from(filename);
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
         let result = self.get_catalog().get_record(&root_thread_key)?;
@@ -951,7 +950,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 x
             },
             _ => {
-                return Err(HFSError::InvalidRecordType);
+                return Err(Error::InvalidRecordType);
             },
         };
         let result = self.get_catalog().get_record(thread)?;
@@ -960,7 +959,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 x
             },
             _ => {
-                return Err(HFSError::InvalidRecordType);
+                return Err(Error::InvalidRecordType);
             },
         };
         for i in &path {
@@ -980,14 +979,14 @@ impl<F: Read + Seek> HFSVolume<F> {
                     return Ok(CatalogRecord { key: result.key.clone(), body: CatalogBody::File(x) });
                 },
                 _ => {
-                    return Err(HFSError::InvalidRecordType);
+                    return Err(Error::InvalidRecordType);
                 },
             };
         }
         Ok(CatalogRecord { key: result.key.clone(), body: CatalogBody::Folder(parent) })
     }
 
-    pub fn get_path(&self, filename: &str) -> HFSResult<Vec<Rc<CatalogRecord>>> {
+    pub fn get_path(&self, filename: &str) -> Result<Vec<Rc<CatalogRecord>>> {
         let path = PathBuf::from(filename);
         let root_thread_key = CatalogKey { _case_match: false, parent_id: 2, node_name: HFSString::from("") };
         let result = self.get_catalog().get_record(&root_thread_key)?;
@@ -996,7 +995,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 x
             },
             _ => {
-                return Err(HFSError::InvalidRecordType);
+                return Err(Error::InvalidRecordType);
             },
         };
         let result = self.get_catalog().get_record(thread)?;
@@ -1005,7 +1004,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                 x
             },
             _ => {
-                return Err(HFSError::InvalidRecordType);
+                return Err(Error::InvalidRecordType);
             },
         };
         let mut parent_id = parent.folderID;
@@ -1022,7 +1021,7 @@ impl<F: Read + Seek> HFSVolume<F> {
                     x
                 },
                 _ => {
-                    return Err(HFSError::InvalidRecordType);
+                    return Err(Error::InvalidRecordType);
                 },
             };
             parent_id = parent.folderID;
@@ -1032,7 +1031,7 @@ impl<F: Read + Seek> HFSVolume<F> {
 }
 
 impl HFSVolume<File> {
-    pub fn load_file(filename: &str) -> std::io::Result<Rc<RefCell<HFSVolume<File>>>> {
+    pub fn load_file(filename: &str) -> io::Result<Rc<RefCell<HFSVolume<File>>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
     }
