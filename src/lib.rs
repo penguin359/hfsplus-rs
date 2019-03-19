@@ -289,9 +289,9 @@ impl Eq for ExtentKey {
 }
 
 pub trait Record<K> {
-    fn import(source: &mut Read, key: K) -> io::Result<Self>
+    fn import(source: &mut Read, key: K) -> Result<Self>
         where Self: Sized;
-    fn export(&self, source: &mut Write) -> io::Result<()>;
+    fn export(&self, source: &mut Write) -> Result<()>;
     fn get_key(&self) -> &K;
 }
 
@@ -301,13 +301,13 @@ pub struct IndexRecord<K> {
 }
 
 impl<K> Record<K> for IndexRecord<K> {
-    fn import(source: &mut Read, key: K) -> io::Result<Self> {
+    fn import(source: &mut Read, key: K) -> Result<Self> {
         let node_id = source.read_u32::<BigEndian>()?;
         Ok(IndexRecord { key, node_id })
     }
 
-    fn export(&self, _source: &mut Write) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation"))
+    fn export(&self, _source: &mut Write) -> Result<()> {
+        Err(Error::UnsupportedOperation)
     }
 
     fn get_key(&self) -> &K {
@@ -328,7 +328,7 @@ pub struct CatalogRecord {
 }
 
 impl Record<CatalogKey> for CatalogRecord {
-    fn import(source: &mut Read, key: CatalogKey) -> io::Result<Self> {
+    fn import(source: &mut Read, key: CatalogKey) -> Result<Self> {
         let record_type = source.read_i16::<BigEndian>()?;
         let body = match record_type {
             internal::kHFSPlusFolderRecord => {
@@ -366,15 +366,15 @@ impl Record<CatalogKey> for CatalogRecord {
                 CatalogBody::FileThread(to_key)
             },
             _ => {
-                //return Err(Error::InvalidRecordType);
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
+                return Err(Error::InvalidRecordType);
+                //return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid Record Type: {:?}", Backtrace::new())));
             },
         };
         Ok(CatalogRecord { key, body })
     }
 
-    fn export(&self, _source: &mut Write) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation"))
+    fn export(&self, _source: &mut Write) -> Result<()> {
+        Err(Error::UnsupportedOperation)
     }
 
     fn get_key(&self) -> &CatalogKey {
@@ -389,12 +389,12 @@ pub struct ExtentRecord {
 }
 
 impl Record<ExtentKey> for ExtentRecord {
-    fn import(source: &mut Read, key: ExtentKey) -> io::Result<Self> {
+    fn import(source: &mut Read, key: ExtentKey) -> Result<Self> {
         let body = import_record(source)?;
         Ok(ExtentRecord { key, body })
     }
 
-    fn export(&self, source: &mut Write) -> io::Result<()> {
+    fn export(&self, source: &mut Write) -> Result<()> {
         export_record(&self.body, source)?;
         Ok(())
     }
