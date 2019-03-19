@@ -8,6 +8,11 @@ rust:
   - beta
   - nightly
 
+before_install:
+  - unxz -k hfsp-blank.img.xz
+  - unxz -k hfsp-small.img.xz
+  - unxz -k hfsp-many2.img.xz
+
 matrix:
   allow_failures:
     - rust: nightly
@@ -18,5 +23,5 @@ addons:
     packages:
       - libfuse-dev
   homebrew:
-    packages:
+    casks:
       - osxfuse
