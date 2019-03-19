@@ -24,3 +24,5 @@ Check for : and /
 Use positioned-io?
 
 Threading extract
+
+Cache nodes, inode->record
