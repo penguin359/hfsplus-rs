@@ -1,3 +1,14 @@
+//! This file is used for loading and saving make of the low-level
+//! on-disk structures as documented in Apple's Technical Note 1150 on
+//! the HFS Plus Volume Format.  All constants, enums, and structs in
+//! this module are based nearly verbatim on the corresponding C
+//! consts, enums, and structs. Each structure as an import and export
+//! function that loads/stores the data from/to a byte stream to/from a
+//! Rust structure. During conversion, data is converted from the
+//! Big-Endian byte order used on disk into the native byte order used
+//! by the system. Beyond that, there are a few functions for
+//! initializing new structures.
+
 #![allow(non_snake_case, unused)]
 #![allow(non_upper_case_globals, unused_variables)]
 #![allow(unused)]  // TODO This needs to be removed once more code is ready
@@ -279,69 +290,69 @@ impl HFSPlusExtentDescriptor {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HFSPlusVolumeHeader {
-    pub signature: u16,
-    pub version: u16,
-    pub attributes: VolumeAttributes,
-    pub lastMountedVersion: u32,
-    pub journalInfoBlock: u32,
+    pub signature:              u16,
+    pub version:                u16,
+    pub attributes:             VolumeAttributes,
+    pub lastMountedVersion:     u32,
+    pub journalInfoBlock:       u32,
 
-    pub createDate: u32,
-    pub modifyDate: u32,
-    pub backupDate: u32,
-    pub checkedDate: u32,
+    pub createDate:             u32,
+    pub modifyDate:             u32,
+    pub backupDate:             u32,
+    pub checkedDate:            u32,
 
-    pub fileCount: u32,
-    pub folderCount: u32,
+    pub fileCount:              u32,
+    pub folderCount:            u32,
 
-    pub blockSize: u32,
-    pub totalBlocks: u32,
-    pub freeBlocks: u32,
+    pub blockSize:              u32,
+    pub totalBlocks:            u32,
+    pub freeBlocks:             u32,
 
-    pub nextAllocation: u32,
-    pub rsrcClumpSize: u32,
-    pub dataClumpSize: u32,
-    pub nextCatalogID: HFSCatalogNodeID,
+    pub nextAllocation:         u32,
+    pub rsrcClumpSize:          u32,
+    pub dataClumpSize:          u32,
+    pub nextCatalogID:          HFSCatalogNodeID,
 
-    pub writeCount: u32,
-    pub encodingsBitmap: u64,
+    pub writeCount:             u32,
+    pub encodingsBitmap:        u64,
 
-    pub finderInfo: [u32; 8],
+    pub finderInfo:             [u32; 8],
 
-    pub allocationFile: HFSPlusForkData,
-    pub extentsFile: HFSPlusForkData,
-    pub catalogFile: HFSPlusForkData,
-    pub attributesFile: HFSPlusForkData,
-    pub startupFile: HFSPlusForkData,
+    pub allocationFile:         HFSPlusForkData,
+    pub extentsFile:            HFSPlusForkData,
+    pub catalogFile:            HFSPlusForkData,
+    pub attributesFile:         HFSPlusForkData,
+    pub startupFile:            HFSPlusForkData,
 }
 
 impl HFSPlusVolumeHeader {
     pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
-            signature: source.read_u16::<BigEndian>()?,
-            version: source.read_u16::<BigEndian>()?,
-            attributes: VolumeAttributes::from_bits_truncate(source.read_u32::<BigEndian>()?),
+            signature:          source.read_u16::<BigEndian>()?,
+            version:            source.read_u16::<BigEndian>()?,
+            attributes:         VolumeAttributes::from_bits_truncate(source.read_u32::<BigEndian>()?),
             lastMountedVersion: source.read_u32::<BigEndian>()?,
-            journalInfoBlock: source.read_u32::<BigEndian>()?,
+            journalInfoBlock:   source.read_u32::<BigEndian>()?,
 
-            createDate: source.read_u32::<BigEndian>()?,
-            modifyDate: source.read_u32::<BigEndian>()?,
-            backupDate: source.read_u32::<BigEndian>()?,
-            checkedDate: source.read_u32::<BigEndian>()?,
+            createDate:         source.read_u32::<BigEndian>()?,
+            modifyDate:         source.read_u32::<BigEndian>()?,
+            backupDate:         source.read_u32::<BigEndian>()?,
+            checkedDate:        source.read_u32::<BigEndian>()?,
 
-            fileCount: source.read_u32::<BigEndian>()?,
-            folderCount: source.read_u32::<BigEndian>()?,
+            fileCount:          source.read_u32::<BigEndian>()?,
+            folderCount:        source.read_u32::<BigEndian>()?,
 
-            blockSize: source.read_u32::<BigEndian>()?,
-            totalBlocks: source.read_u32::<BigEndian>()?,
-            freeBlocks: source.read_u32::<BigEndian>()?,
+            blockSize:          source.read_u32::<BigEndian>()?,
+            totalBlocks:        source.read_u32::<BigEndian>()?,
+            freeBlocks:         source.read_u32::<BigEndian>()?,
 
-            nextAllocation: source.read_u32::<BigEndian>()?,
-            rsrcClumpSize: source.read_u32::<BigEndian>()?,
-            dataClumpSize: source.read_u32::<BigEndian>()?,
-            nextCatalogID: source.read_u32::<BigEndian>()?,  // XXX HFSCatalogNodeID,
+            nextAllocation:     source.read_u32::<BigEndian>()?,
+            rsrcClumpSize:      source.read_u32::<BigEndian>()?,
+            dataClumpSize:      source.read_u32::<BigEndian>()?,
+            nextCatalogID:      source.read_u32::<BigEndian>()?,  // XXX HFSCatalogNodeID,
 
-            writeCount: source.read_u32::<BigEndian>()?,
-            encodingsBitmap: source.read_u64::<BigEndian>()?,
+            writeCount:         source.read_u32::<BigEndian>()?,
+            encodingsBitmap:    source.read_u64::<BigEndian>()?,
 
             finderInfo: [
                 source.read_u32::<BigEndian>()?,
@@ -354,11 +365,11 @@ impl HFSPlusVolumeHeader {
                 source.read_u32::<BigEndian>()?,
             ],
 
-            allocationFile: HFSPlusForkData::import(source)?,
-            extentsFile: HFSPlusForkData::import(source)?,
-            catalogFile: HFSPlusForkData::import(source)?,
-            attributesFile: HFSPlusForkData::import(source)?,
-            startupFile: HFSPlusForkData::import(source)?,
+            allocationFile:     HFSPlusForkData::import(source)?,
+            extentsFile:        HFSPlusForkData::import(source)?,
+            catalogFile:        HFSPlusForkData::import(source)?,
+            attributesFile:     HFSPlusForkData::import(source)?,
+            startupFile:        HFSPlusForkData::import(source)?,
         })
     }
 
@@ -439,10 +450,10 @@ bitflags! {
     }
 }
 
-pub const HFSP_SIGNATURE: u16 = 0x482b;  // H+ Signature (Big endian)
-pub const HFSX_SIGNATURE: u16 = 0x4858;  // HFSX Signature (Big endian)
-pub const HFSP_VERSION: u16 = 4;  // H+ Signature (Big endian)
-pub const HFSX_VERSION: u16 = 5;  // HFSX Signature (Big endian)
+pub const HFSP_SIGNATURE:   u16 = 0x482b;   // H+ Signature (Big endian)
+pub const HFSX_SIGNATURE:   u16 = 0x4858;   // HFSX Signature (Big endian)
+pub const HFSP_VERSION:     u16 = 4;        // H+ Signature (Big endian)
+pub const HFSX_VERSION:     u16 = 5;        // HFSX Signature (Big endian)
 
 
 
@@ -469,7 +480,7 @@ pub struct BTNodeDescriptor {
 }
 
 impl BTNodeDescriptor {
-    pub fn import(source: &mut Read) -> std::io::Result<Self> {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
             fLink: source.read_u32::<BigEndian>()?,
             bLink: source.read_u32::<BigEndian>()?,
@@ -480,7 +491,7 @@ impl BTNodeDescriptor {
         })
     }
 
-    pub fn export(&self, source: &mut Write) -> std::io::Result<()> {
+    pub fn export(&self, source: &mut Write) -> io::Result<()> {
         source.write_u32::<BigEndian>(self.fLink)?;
         source.write_u32::<BigEndian>(self.bLink)?;
         source.write_i8(self.kind)?;
@@ -545,7 +556,7 @@ pub struct BTHeaderRec {
 }
 
 impl BTHeaderRec {
-    pub fn import(source: &mut Read) -> std::io::Result<Self> {
+    pub fn import(source: &mut Read) -> io::Result<Self> {
         Ok(Self {
             treeDepth: source.read_u16::<BigEndian>()?,
             rootNode: source.read_u32::<BigEndian>()?,
@@ -582,7 +593,7 @@ impl BTHeaderRec {
         })
     }
 
-    pub fn export(&self, source: &mut Write) -> std::io::Result<()> {
+    pub fn export(&self, source: &mut Write) -> io::Result<()> {
         source.write_u16::<BigEndian>(self.treeDepth)?;
         source.write_u32::<BigEndian>(self.rootNode)?;
         source.write_u32::<BigEndian>(self.leafRecords)?;
