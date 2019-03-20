@@ -660,8 +660,7 @@ fn load_fragmented_fork_data() {
     }));
     let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 33];
-    fork.seek(std::io::SeekFrom::Start(0)).unwrap();
-    fork.read(buffer.as_mut()).unwrap();
+    fork.read_at(0, buffer.as_mut()).unwrap();
     //println!("Buffer: {:?}", buffer.to_vec());
     let expected: Vec<u8> = "Hello, World!\nWhat is your name?\n".bytes().collect();
     println!("Expected:");
@@ -827,7 +826,7 @@ fn load_dummy_overflow_file() {
     write_extents_overflow_file(&mut buffer, &extents[..])
         .expect("Failed to create extents overflow file");
     assert_eq!(buffer.len(), 1024);  // Size of 2 nodes
-    let mut btree = BTree::<Cursor<&[u8]>, ExtentKey, ExtentRecord>::open(Cursor::new(buffer.as_ref())).expect("Failed to open overflow b-tree");
+    let mut btree = BTree::<&[u8], ExtentKey, ExtentRecord>::open(&buffer).expect("Failed to open overflow b-tree");
     assert_eq!(btree.header.header.rootNode, 1);
     assert_eq!(btree.header.header.treeDepth, 1);
     assert_eq!(btree.header.header.firstLeafNode, 1);
@@ -926,8 +925,7 @@ fn load_fragmented_fork_data_with_overflow() {
     volume.borrow_mut().extents_btree = Some(Rc::new(RefCell::new(BTree::open(extents_fork).expect("Failed to open extents overflow B-Tree"))));
     let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).expect("Failed to open test file data fork");
     let mut buffer = [0u8; 256];
-    fork.seek(std::io::SeekFrom::Start(0)).unwrap();
-    fork.read(buffer.as_mut()).expect("Failed to read test file fork");
+    fork.read_exact_at(0, &mut buffer).expect("Failed to read test file fork");
     //println!("Buffer: {:?}", buffer.to_vec());
     println!("Expected:");
     for row in 0..(expected.len()+16-1) / 16 {
@@ -993,8 +991,7 @@ fn load_beyond_end_of_fork_extents() {
     }));
     let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 37];  // Note, this is one more byte than in fork extents
-    fork.seek(SeekFrom::Start(0)).unwrap();
-    let result = fork.read(buffer.as_mut());
+    let result = fork.read_exact_at(0, &mut buffer);
     assert!(result.is_err(), "Failed to trigger error in read()");
 }
 
@@ -1025,8 +1022,7 @@ fn load_beyond_end_of_fork_data() {
     let mut fork = Fork::load(Rc::clone(&volume.borrow().file), kHFSCatalogFileID, 0, Rc::clone(&volume), &volume.borrow().header.catalogFile).unwrap();
     let mut buffer = [0u8; 34];  // Note, this is one more byte than in fork data
                                  // but still resides inside fork extent
-    fork.seek(SeekFrom::Start(0)).unwrap();
-    let result = fork.read(buffer.as_mut());
+    let result = fork.read_exact_at(0, &mut buffer);
     assert!(result.is_err(), "Failed to trigger error in read()");
 }
 

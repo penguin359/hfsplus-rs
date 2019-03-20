@@ -24,6 +24,9 @@ extern crate bitflags;
 extern crate unicode_normalization;
 use unicode_normalization::UnicodeNormalization;
 
+extern crate positioned_io;
+use positioned_io::ReadAt;
+
 extern crate rand;
 
 
@@ -295,7 +298,7 @@ impl<K: Key, R: Record<K>> Node<K, R> {
 }
 
 
-pub struct BTree<F: Read + Seek, K, R> {
+pub struct BTree<F: ReadAt, K, R> {
     fork: F,
     node_size: u16,
     pub header: HeaderNode,
@@ -303,18 +306,19 @@ pub struct BTree<F: Read + Seek, K, R> {
     _top_node: Option<R>,
 }
 
-impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
+impl<F: ReadAt, K: Key, R: Record<K>> BTree<F, K, R> {
     fn open(mut fork: F) -> Result<BTree<F, K, R>> {
         let header;
+        // XXX Verify size >= 512
+        // Minimum size for any node, needed to get nodeSize field
         let mut buffer = vec![0; 512];
-        fork.seek(SeekFrom::Start(0))?;
-        fork.read_exact(&mut buffer).expect("Failed to read from fork");
+        fork.read_exact_at(0, &mut buffer).expect("Failed to read from fork");
         let node_size = (&buffer[32..34]).read_u16::<BigEndian>().expect("Error decoding node size");
         let remaining = node_size - buffer.len() as u16;
         for _ in 0..remaining {
             buffer.push(0);
         }
-        fork.read_exact(&mut buffer[512..]).expect("Failed to read from fork");
+        fork.read_exact_at(512, &mut buffer[512..]).expect("Failed to read from fork");
         let header_node = Node::<K, R>::load(&buffer)?;
         header = match header_node {
             Node::HeaderNode(x) => {
@@ -325,8 +329,6 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
                 return Err(Error::BadNode);
             },
         };
-        // XXX Verify size >= 512
-        //file.read_exact(&mut header_node)?;  // Minimum size for any node, needed to get nodeSize field
         Ok(BTree {
             fork,
             node_size,
@@ -338,8 +340,8 @@ impl<F: Read + Seek, K: Key, R: Record<K>> BTree<F, K, R> {
 
     pub fn get_node(&mut self, node_num: usize) -> Result<Node<K, R>> {
         let mut buffer = vec![0; self.node_size as usize];
-        self.fork.seek(SeekFrom::Start((node_num*self.node_size as usize) as u64))?;
-        self.fork.read(&mut buffer).expect("Failed to read from fork");
+        let offset = (node_num*self.node_size as usize) as u64;
+        self.fork.read_exact_at(offset, &mut buffer).expect("Failed to read from fork");
         let node = Node::<K, R>::load(&buffer)?;
         Ok(node)
     }
@@ -490,8 +492,7 @@ impl<F: Read + Seek> Fork<F> {
 
     pub fn read_all(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.logical_size as usize];
-        self.seek(SeekFrom::Start(0))?;
-        self.read(buffer.as_mut_slice())?;
+        self.read_exact_at(0, &mut buffer)?;
         Ok(buffer)
     }
 
@@ -500,9 +501,10 @@ impl<F: Read + Seek> Fork<F> {
     }
 }
 
-impl<F: Read + Seek> Read for Fork<F> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let offset = self.position;
+impl<F: Read + Seek> ReadAt for Fork<F> {
+    fn read_at(&self, offset: u64, buffer: &mut [u8]) -> io::Result<usize> {
+        // TODO Check limits and verify offset is valid
+        // Needs test to show it will fail
         let volume = self.volume.borrow();
         let mut file = self.file.borrow_mut();
         let block_size = volume.header.blockSize as u64;
@@ -541,26 +543,12 @@ impl<F: Read + Seek> Read for Fork<F> {
         if bytes_read < buffer.len() {
             Err(io::Error::new(io::ErrorKind::UnexpectedEof, "No more extents to read"))
         } else {
-            self.position += bytes_read as u64;
             Ok(bytes_read)
         }
     }
 }
 
-impl<F: Read + Seek> Seek for Fork<F> {
-    // TODO Check limits and verify offset is valid
-    // Needs test to show it will fail
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let new_position = match pos {
-            SeekFrom::Start(x) => x,
-            _ => { return Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation")); },
-        };
-        self.position = new_position;
-        Ok(new_position)
-    }
-}
-
-type ForkRc<F> = Rc<RefCell<Fork<F>>>;
+//type ForkRc<F> = Rc<RefCell<Fork<F>>>;
 
 
 
