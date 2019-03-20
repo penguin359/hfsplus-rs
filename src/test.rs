@@ -652,7 +652,7 @@ fn load_fragmented_fork_data() {
     raw_data[4*18+3] = '?' as u8;
     raw_data[4*04+0] = '\n' as u8;
     let volume = Rc::new(RefCell::new(HFSVolume {
-        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        file: Rc::new(RefCell::new(&raw_data)),
         header,
         forks: HashMap::new(),
         catalog_btree: None,
@@ -915,7 +915,7 @@ fn load_fragmented_fork_data_with_overflow() {
     header.extentsFile.extents[0].startBlock = 1024 / 4;
     header.extentsFile.extents[0].blockCount = 1024 / 4;
     let volume = Rc::new(RefCell::new(HFSVolume {
-        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        file: Rc::new(RefCell::new(&raw_data)),
         header,
         forks: HashMap::new(),
         catalog_btree: None,
@@ -983,7 +983,7 @@ fn load_beyond_end_of_fork_extents() {
     header.catalogFile.extents[4].startBlock = 4;
     header.catalogFile.extents[4].blockCount = 1;
     let volume = Rc::new(RefCell::new(HFSVolume {
-        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        file: Rc::new(RefCell::new(&raw_data)),
         header,
         forks: HashMap::new(),
         catalog_btree: None,
@@ -1013,7 +1013,7 @@ fn load_beyond_end_of_fork_data() {
     header.catalogFile.extents[4].startBlock = 4;
     header.catalogFile.extents[4].blockCount = 1;
     let volume = Rc::new(RefCell::new(HFSVolume {
-        file: Rc::new(RefCell::new(Cursor::new(raw_data))),
+        file: Rc::new(RefCell::new(&raw_data)),
         header,
         forks: HashMap::new(),
         catalog_btree: None,

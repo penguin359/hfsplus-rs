@@ -440,7 +440,7 @@ type BTreeRc<F, K, R> = Rc<RefCell<BTree<F, K, R>>>;
 
 
 
-pub struct Fork<F: Read + Seek> {
+pub struct Fork<F: ReadAt> {
     file: Rc<RefCell<F>>,
     position: u64,
     catalog_id: HFSCatalogNodeID,
@@ -450,7 +450,7 @@ pub struct Fork<F: Read + Seek> {
     extents: Vec<(u32, u32, u64, u64)>,
 }
 
-impl<F: Read + Seek> Fork<F> {
+impl<F: ReadAt> Fork<F> {
     pub fn load(file: Rc<RefCell<F>>, catalog_id: HFSCatalogNodeID, fork_type: u8, volume: Rc<RefCell<HFSVolume<F>>>, data: &HFSPlusForkData) -> io::Result<Fork<F>> {
         let block_size = volume.borrow().header.blockSize as u64;
         let mut extents = Vec::with_capacity(8);
@@ -501,7 +501,7 @@ impl<F: Read + Seek> Fork<F> {
     }
 }
 
-impl<F: Read + Seek> ReadAt for Fork<F> {
+impl<F: ReadAt> ReadAt for Fork<F> {
     fn read_at(&self, offset: u64, buffer: &mut [u8]) -> io::Result<usize> {
         // TODO Check limits and verify offset is valid
         // Needs test to show it will fail
@@ -525,10 +525,10 @@ impl<F: Read + Seek> ReadAt for Fork<F> {
             } else {
                 0
             };
-            file.seek(SeekFrom::Start(start_block as u64 * block_size + extent_offset))?;
+            let read_offset = start_block as u64 * block_size + extent_offset;
             let bytes_remaining = buffer.len() - bytes_read;
             let bytes_to_read = std::cmp::min(extent_length, bytes_remaining as u64);
-            file.read_exact(&mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
+            file.read_exact_at(read_offset, &mut buffer[bytes_read as usize..bytes_read+bytes_to_read as usize])?;
             bytes_read += bytes_to_read as usize;
             if bytes_read >= buffer.len() {
                 println!("All bytes read");
@@ -759,7 +759,7 @@ impl Record<ExtentKey> for ExtentRecord {
 
 
 
-pub struct HFSVolume<F: Read + Seek> {
+pub struct HFSVolume<F: ReadAt> {
     pub file: Rc<RefCell<F>>,
     header: HFSPlusVolumeHeader,
     forks: HashMap<HFSCatalogNodeID, Rc<RefCell<Fork<F>>>>,
@@ -767,10 +767,12 @@ pub struct HFSVolume<F: Read + Seek> {
     pub extents_btree: Option<BTreeRc<Fork<F>, ExtentKey, ExtentRecord>>,
 }
 
-impl<F: Read + Seek> HFSVolume<F> {
+impl<F: ReadAt> HFSVolume<F> {
     pub fn load(mut file: F) -> io::Result<Rc<RefCell<HFSVolume<F>>>> {
-        file.seek(SeekFrom::Start(1024))?;
-        let header = HFSPlusVolumeHeader::import(&mut file)?;
+        //let mut contents = [0u8; 512];
+        //file.read_exact_at(1024, &mut contents);
+        //let header = HFSPlusVolumeHeader::import(&mut Cursor::new(&contents[..]))?;
+        let header = HFSPlusVolumeHeader::import(&mut positioned_io::Cursor::new_pos(&file, 1024))?;
         let _hfsx_volume = match header.signature {
             HFSP_SIGNATURE => {
                 println!("HFS+ Volume");
