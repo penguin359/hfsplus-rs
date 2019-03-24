@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{self, Cursor, SeekFrom};
+use std::io::{self, Cursor};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
@@ -12,8 +12,8 @@ use std::fmt;
 use std::path::PathBuf;
 
 
-extern crate backtrace;
-use backtrace::Backtrace;
+//extern crate backtrace;
+//use backtrace::Backtrace;
 
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -427,7 +427,7 @@ impl<F: ReadAt, K: Key, R: Record<K>> BTree<F, K, R> {
         }
     }
 
-    fn get_record(&mut self, key: &K) -> Result<Rc<R>> {
+    pub fn get_record(&mut self, key: &K) -> Result<Rc<R>> {
         self.get_record_node(&key, self.header.header.rootNode as usize)
     }
 
@@ -554,8 +554,8 @@ impl<F: ReadAt> ReadAt for Fork<F> {
 
 #[derive(Debug, Clone)]
 pub struct CatalogKey {
-    _case_match: bool,
-    parent_id: HFSCatalogNodeID,
+    pub _case_match: bool,
+    pub parent_id: HFSCatalogNodeID,
     pub node_name: HFSString,
 }
 
@@ -847,7 +847,7 @@ impl<F: ReadAt> HFSVolume<F> {
         }
     }
 
-    fn get_catalog(&self) -> std::cell::RefMut<BTree<Fork<F>, CatalogKey, CatalogRecord>> {
+    pub fn get_catalog(&self) -> std::cell::RefMut<BTree<Fork<F>, CatalogKey, CatalogRecord>> {
         self.catalog_btree.as_ref().unwrap().borrow_mut()
     }
 
@@ -944,5 +944,70 @@ impl HFSVolume<File> {
     pub fn load_file(filename: &str) -> io::Result<Rc<RefCell<HFSVolume<File>>>> {
         let file = File::open(filename)?;
         HFSVolume::load(file)
+    }
+}
+
+mod bsd {
+    use std::fs::File;
+    use std::path::Path;
+
+    use super::Error;
+    use super::Result;
+
+    pub struct BSDVolume;
+
+    pub struct Stat {
+        catalog_id:             u64,
+        owner_id:               u32,
+        group_id:               u32,
+        admin_flags:            u8,
+        owner_flags:            u8,
+        file_mode:              u16,
+        special:                u32,
+    }
+
+    impl Stat {
+        pub fn uid(&self) -> u32 {
+            self.owner_id
+        }
+
+        pub fn gid(&self) -> u32 {
+            self.group_id
+        }
+
+        pub fn ino(&self) -> u64 {
+            self.catalog_id
+        }
+
+        pub fn is_dir(&self) -> bool {
+            true //self.groupID
+        }
+
+        pub fn is_file(&self) -> bool {
+            false //self.groupID
+        }
+    }
+
+    impl BSDVolume {
+        pub fn load_file<F: AsRef<Path>>(file: F) -> Result<BSDVolume> {
+            let file = File::open(file.as_ref())?;
+            Ok(BSDVolume)
+        }
+
+        pub fn volume_label(&self) -> Result<&'static str> {
+            Ok("Small")
+        }
+
+        pub fn stat<F: AsRef<Path>>(&self, file: F) -> Result<Stat> {
+            Ok(Stat {
+                catalog_id: 2,
+                owner_id: 501,
+                group_id: 20,
+                admin_flags: 0,
+                owner_flags: 0,
+                file_mode: 0,
+                special: 0,
+            })
+        }
     }
 }

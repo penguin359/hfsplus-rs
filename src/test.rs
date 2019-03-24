@@ -1,5 +1,3 @@
-extern crate unicode_normalization;
-
 use rand::{thread_rng, Rng};
 
 use super::*;
@@ -1705,4 +1703,35 @@ fn load_small_subfolder_path_listing() {
     assert!(children_res.is_ok(), "Failed to search path for children");
     let children = children_res.unwrap();
     assert_eq!(children.len(), 0);
+}
+
+mod bsd {
+    use crate::bsd::*;
+
+    #[test]
+    fn open_bad_bsd_volume() {
+        let volume_result = BSDVolume::load_file("nonexistant.img");
+        assert!(volume_result.is_err(), "Volume should not exist");
+        // TODO Check specific error code
+    }
+
+    #[test]
+    fn open_bsd_volume() {
+        let volume = BSDVolume::load_file("hfsp-small.img")
+            .expect("Failed to open BSD volume");
+        assert_eq!(volume.volume_label().unwrap(), "Small");
+    }
+
+    #[test]
+    fn test_stat_directory() {
+        let volume = BSDVolume::load_file("hfsp-small.img")
+            .expect("Failed to open BSD volume");
+
+        let stat = volume.stat("/").expect("Failed to stat directory");
+        assert_eq!(stat.uid(), 501);
+        assert_eq!(stat.gid(), 20);
+        assert_eq!(stat.ino(), 2);
+        assert!(stat.is_dir());
+        assert!(!stat.is_file());
+    }
 }
